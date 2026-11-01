@@ -3,10 +3,12 @@ import type { AddressInfo } from 'node:net';
 import type { Config } from './config.js';
 import { openDatabase, type Db } from './db/database.js';
 import { migrate } from './db/migrate.js';
+import { createGitAdapter, type GitAdapter } from './git/adapter.js';
 import { createApp, type AppDeps } from './http/app.js';
 import type { Logger } from './logger.js';
 import { createCommandRunner, type CommandRunner } from './proc/run-command.js';
 import { projectRoutes } from './projects/routes.js';
+import { repoRoutes } from './repos/routes.js';
 import { WorkspaceLayout } from './workspace/layout.js';
 import { WorkspaceStore } from './workspace/store.js';
 
@@ -17,6 +19,7 @@ export interface AppContext {
   readonly db: Db;
   readonly workspace: WorkspaceStore;
   readonly runner: CommandRunner;
+  readonly git: GitAdapter;
 }
 
 export interface RunningApp {
@@ -51,12 +54,21 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
     oasdiffBin: config.oasdiffBin,
     shellRoot: layout.checksDir,
   });
-  const context: AppContext = { config, logger, db, workspace, runner };
+  const context: AppContext = {
+    config,
+    logger,
+    db,
+    workspace,
+    runner,
+    git: createGitAdapter(runner),
+  };
 
+  // `createApp` hanya menerima satu fungsi `registerRoutes`; rute tiap fitur digabung di sini.
+  const routes = [projectRoutes(context), repoRoutes(context)];
   const app = createApp({
     logger,
     ...(options.webDist === undefined ? {} : { webDist: options.webDist }),
-    registerRoutes: projectRoutes(context),
+    registerRoutes: (api) => routes.forEach((register) => register(api)),
   });
 
   let server: Server;

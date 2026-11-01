@@ -127,6 +127,16 @@ export class WorkspaceLayout {
     );
   }
 
+  /** `cache/specs/<repoId>/` */
+  repoSpecCacheDir(repoId: number): string {
+    return this.join('cache', 'specs', repoSegment(repoId));
+  }
+
+  /** `cache/extract/<repoId>/` */
+  repoExtractCacheDir(repoId: number): string {
+    return this.join('cache', 'extract', repoSegment(repoId));
+  }
+
   /** `runs/checks/<checkId>/` */
   checkRunDir(checkId: number): string {
     return this.join('runs', 'checks', checkSegment(checkId));

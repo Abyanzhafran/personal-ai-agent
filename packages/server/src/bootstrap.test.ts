@@ -80,6 +80,26 @@ describe('startApp', () => {
     ]);
   });
 
+  it('memasang rute repo dengan adapter git sungguhan di samping rute project', async () => {
+    app = await startApp(config(), { logger: silent() });
+    const base = `http://127.0.0.1:${app.port}/api`;
+    const post = (url: string, body: unknown) =>
+      fetch(`${base}${url}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const project = (await (await post('/projects', { name: 'Order' })).json()) as { id: number };
+
+    // Folder biasa: git sungguhan dijalankan lewat runner dan menjawab "bukan repo".
+    const plain = await fs.mkdtemp(path.join(tmp, 'plain-'));
+    const res = await post(`/projects/${project.id}/repos`, { role: 'service', local_path: plain });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('repo_not_git');
+    expect((await fetch(`${base}/repos/1`, { method: 'DELETE' })).status).toBe(404);
+  });
+
   it('port yang sudah dipakai -> EADDRINUSE', async () => {
     app = await startApp(config(), { logger: silent() });
     const second = startApp(config({ port: app.port, workspaceDir: path.join(tmp, 'ws2') }), {

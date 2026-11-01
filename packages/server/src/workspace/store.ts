@@ -141,6 +141,25 @@ export class WorkspaceStore {
   }
 
   /**
+   * Membersihkan milik satu repo: profilnya, cache spec dan ekstraksi (dikunci id repo), dan
+   * `runs/checks/<id>/` untuk check yang repo ini jadi provider-nya (baris check ikut terhapus
+   * lewat cascade). Folder repo di disk user tidak disentuh.
+   */
+  async removeRepoData(repo: {
+    id: number;
+    name: string;
+    projectSlug: string;
+    checkIds: readonly number[];
+  }): Promise<void> {
+    await this.remove(this.layout.repoProfileFile(repo.projectSlug, repo.name));
+    await this.remove(this.layout.repoSpecCacheDir(repo.id));
+    await this.remove(this.layout.repoExtractCacheDir(repo.id));
+    for (const checkId of repo.checkIds) {
+      await this.remove(this.layout.checkRunDir(checkId));
+    }
+  }
+
+  /**
    * Menolak bila leluhur terdalam `dir` yang sudah ada (setelah symlink di-resolve) berada di
    * luar workspace asli. `dir` sendiri boleh belum ada.
    */

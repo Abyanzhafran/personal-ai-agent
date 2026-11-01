@@ -19,6 +19,20 @@ export const ERROR_CODES = {
   project_not_found: 'project_not_found',
   /** Nama menghasilkan slug yang sudah dipakai project lain. `details`: `{ slug }`. */
   project_slug_taken: 'project_slug_taken',
+  repo_not_found: 'repo_not_found',
+  /** Folder bukan repo git (`rev-parse --is-inside-work-tree` tidak `true`). */
+  repo_not_git: 'repo_not_git',
+  /** `origin/<default_branch>` tidak ada. Nama branch ada di pesan. */
+  branch_not_found: 'branch_not_found',
+  /** `local_path` sudah terdaftar di project yang sama. */
+  repo_path_taken: 'repo_path_taken',
+  /** Nama repo sudah dipakai repo lain di project yang sama. `details`: `{ fields }`. */
+  repo_name_taken: 'repo_name_taken',
+  /** Penolakan `normalizeLocalPath`; pesannya siap tampil di field `local_path`. */
+  local_path_empty: 'local_path_empty',
+  local_path_not_absolute: 'local_path_not_absolute',
+  local_path_missing: 'local_path_missing',
+  local_path_not_directory: 'local_path_not_directory',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */
