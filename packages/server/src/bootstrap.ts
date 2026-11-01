@@ -73,9 +73,12 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
   };
 
   // oasdiff yang hilang atau terlalu lama tidak menghentikan server; check-nya yang ditolak (CC-060).
-  const oasdiff = await context.oasdiff.capability();
-  if (oasdiff.ok) logger.info({ version: oasdiff.version }, 'oasdiff siap');
-  else logger.warn({ reason: oasdiff.reason }, oasdiff.message);
+  // Tidak ditunggu: menelusuri PATH untuk binary yang tidak ada lambat di Windows saat mesin sibuk,
+  // dan itu tidak boleh menunda `listen`. Hasilnya di-cache, jadi check berikutnya menunggu probe yang sama.
+  void context.oasdiff.capability().then((oasdiff) => {
+    if (oasdiff.ok) logger.info({ version: oasdiff.version }, 'oasdiff siap');
+    else logger.warn({ reason: oasdiff.reason }, oasdiff.message);
+  });
 
   // `createApp` hanya menerima satu fungsi `registerRoutes`; rute tiap fitur digabung di sini.
   const routes = [projectRoutes(context), repoRoutes(context)];

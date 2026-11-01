@@ -1,11 +1,15 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from './config.js';
 import { startApp, type RunningApp } from './bootstrap.js';
 import { OasdiffUnavailableError } from './diff/oasdiff.js';
 import { createLogger } from './logger.js';
+
+// Start sungguhan (SQLite native, listen, probe oasdiff) dan hapus folder sementara di Windows
+// bisa melewati 5/10 dtk bawaan saat mesin sibuk, terutama pada test pertama yang masih "dingin".
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 let tmp: string;
 let app: RunningApp | undefined;
