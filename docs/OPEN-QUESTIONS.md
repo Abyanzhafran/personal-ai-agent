@@ -1,0 +1,12 @@
+# Pertanyaan terbuka untuk arsitek
+
+Hal yang saya putuskan sementara agar pekerjaan tidak berhenti, tetapi sebaiknya Anda konfirmasi. Tiap butir menyebut default yang sedang dipakai dan task yang terpengaruh. Detail keputusan ada di [HANDOFF.md](./HANDOFF.md).
+
+Empat pertanyaan di bagian akhir backlog (lockfile FastAPI, `spec_cmd` kantor, versi `oasdiff`, model dan batas biaya) **tetap terbuka** dan belum memblokir apa pun sampai CC-031/CC-034/CC-041.
+
+| #   | Pertanyaan                                                                                                                                                                                                                           | Default sekarang                                                                 | Task       |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ---------- |
+| Q-1 | Target runtime: backlog menulis Node 20 LTS, yang sudah EOL (April 2026). `better-sqlite3@13` dan `execa@10` terbaru sudah mewajibkan Node >= 22. Naikkan ke Node 22/24?                                                             | Tetap kompatibel Node 20.19+ dan 24 (`better-sqlite3@12`, `execa@9`, `jsdom@26`) | semua      |
+| Q-2 | Hapus repo (`DELETE /repos/:id`): apakah check dan finding yang melibatkannya ikut terhapus? Skema sekarang `ON DELETE CASCADE` untuk `checks.provider_repo_id` dan `findings.consumer_repo_id`, sehingga laporan lama bisa berubah. | CASCADE                                                                          | CC-013     |
+| Q-3 | `ANTHROPIC_API_KEY` dan `ANTHROPIC_MODEL` wajib agar server start, walau G1 sampai G2 belum memakai Claude. Cukup, atau jadikan opsional sampai discovery dipanggil?                                                                 | Wajib (sesuai AC "variabel wajib kosong -> berhenti")                            | CC-002     |
+| Q-4 | Aturan kerja #1 tidak menyebut `git diff`, padahal CC-036 memakai `git diff --name-only`. Saya izinkan `diff` (hanya baca) di allowlist. Setuju?                                                                                     | `diff` diizinkan; opsi `--output`, `--upload-pack`, `--exec`, `-O` ditolak       | CC-006/036 |

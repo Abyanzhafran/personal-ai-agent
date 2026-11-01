@@ -1,0 +1,25 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# env: hanya .env.example yang di-commit
+.env
+.env.*
+!.env.example
+
+# artefak test e2e
+playwright-report/
+test-results/
+
+# workspace lokal Contract Check tidak pernah di dalam repo (lihat WORKSPACE_DIR),
+# tetapi folder ini dipakai bila WORKSPACE_DIR diarahkan ke dalam repo saat pengembangan
+.workspace/
+
+# fixture repo git yang dibangkitkan oleh `npm run fixtures`
+.fixtures/
+
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+coverage
+package-lock.json
+.fixtures
+.workspace
+packages/web/src/routeTree.gen.ts

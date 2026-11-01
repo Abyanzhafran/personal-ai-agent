@@ -1,0 +1,21 @@
+{
+  "name": "@cc/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Skema zod dan tipe yang dipakai bersama oleh server dan web. Satu-satunya tempat kontrak API didefinisikan.",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

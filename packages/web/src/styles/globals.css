@@ -1,0 +1,95 @@
+@import 'tailwindcss';
+
+/*
+ * Font dimuat lokal dari paket npm (dibundel Vite ke /assets), bukan dari CDN: aplikasi
+ * jalan di laptop dan tidak boleh bergantung pada jaringan saat runtime. Hanya subset latin.
+ */
+@import '@fontsource/roboto/latin-400.css';
+@import '@fontsource/roboto/latin-500.css';
+@import '@fontsource/roboto/latin-700.css';
+@import '@fontsource/roboto-mono/latin-400.css';
+@import '@fontsource/roboto-mono/latin-500.css';
+
+/*
+ * Token desain Material 3, diambil dari mockup v2 (sumber kebenaran visual). Ini SATU-SATUNYA
+ * tempat nilai warna ditulis: komponen memakai kelas Tailwind (bg-primary, text-on-surface, ...)
+ * atau var(--color-*), tidak pernah hex. `static` memaksa semua variabel selalu ditulis ke :root
+ * agar halaman /dev/tokens bisa membacanya. Daftar nama harus sama dengan src/design/tokens.ts
+ * (dijaga test).
+ */
+@theme static {
+  /* Palet bawaan Tailwind dikosongkan: warna di luar token ini tidak boleh dipakai. */
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* Aksi utama */
+  --color-primary: #0b57d0;
+  --color-on-primary: #ffffff;
+
+  /* Tonal (tombol tonal, tujuan nav aktif, project terpilih) */
+  --color-secondary-container: #d3e3fd;
+  --color-on-secondary-container: #041e49;
+
+  /* Permukaan */
+  --color-surface: #f8fafd;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container: #f3f6fc;
+  --color-surface-container-high: #f1f4f9;
+
+  /* Garis */
+  --color-outline: #747775;
+  --color-outline-variant: #c4c7c5;
+  --color-divider: #e1e3e1;
+
+  /* Teks */
+  --color-on-surface: #1f1f1f;
+  --color-on-surface-variant: #444746;
+
+  /* Status: break, warn, bersih, info, netral */
+  --color-error-container: #f9dedc;
+  --color-on-error-container: #410e0b;
+  --color-warning-container: #ffe3a3;
+  --color-on-warning-container: #3e2e00;
+  --color-success-container: #c4eed0;
+  --color-on-success-container: #0a3d1b;
+  --color-info-container: #dde3ea;
+  --color-on-info-container: #1f2a37;
+  --color-neutral-container: #edf1f8;
+
+  /* Sorot baris kode di cuplikan finding */
+  --color-code-highlight-break: #fbe3e1;
+  --color-code-highlight-warn: #fff0cc;
+  --color-code-highlight-info: #e2eaf6;
+
+  /* Bentuk: 8 chip, 12 kartu/field, 20 tombol, 28 tombol utama dan pil */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Tipografi */
+  --font-sans: 'Roboto', system-ui, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, monospace;
+  --text-headline: 28px;
+  --text-headline--line-height: 36px;
+  --text-title: 16px;
+  --text-title--line-height: 24px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-label: 12px;
+  --text-label--line-height: 16px;
+  --text-code: 13px;
+  --text-code--line-height: 20px;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background-color: var(--color-surface);
+    color: var(--color-on-surface);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+}

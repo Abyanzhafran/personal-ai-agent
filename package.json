@@ -1,0 +1,38 @@
+{
+  "name": "contract-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contract Check Tahap 1: deteksi dampak perubahan kontrak API antar repo, jalan lokal.",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names server,web --prefix-colors blue,green \"npm run dev -w @cc/server\" \"npm run dev -w @cc/web\"",
+    "build": "npm run build -w @cc/shared && npm run build -w @cc/server && npm run build -w @cc/web",
+    "test": "vitest run",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify": "npm run lint && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.19.43",
+    "concurrently": "^9.2.5",
+    "eslint": "^10.14.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^6.4.5",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "vite": "^6.4.5"
+  }
+}
