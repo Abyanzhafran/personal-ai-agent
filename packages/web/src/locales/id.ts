@@ -8,4 +8,6 @@ export const id = {
   'breadcrumb.check': 'Check #{id}',
   'breadcrumb.discovery': 'Tinjau profil repo',
   'toast.label': 'Notifikasi',
+  'api.network': 'Tidak dapat terhubung ke server. Periksa apakah aplikasi masih berjalan.',
+  'api.unexpected': 'Server mengirim respons yang tidak terduga.',
 };

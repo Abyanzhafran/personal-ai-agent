@@ -14,7 +14,8 @@ export const createT =
       String(vars[name] ?? placeholder),
     );
 
-const t = createT(id);
+/** Untuk kode di luar komponen (mis. `lib/api.ts`); komponen memakai `useT()`. */
+export const t = createT(id);
 
 /** Bahasa aktif dipilih di sini, bukan di komponen. */
 export const useT = () => t;
