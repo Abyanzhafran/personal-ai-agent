@@ -5,11 +5,11 @@ Catatan untuk agent yang melanjutkan. Riwayat per task ada di `git log` dan kart
 ## 1. Status
 
 - **Sesi terakhir**: 2026-11-01.
-- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072 (G2). Sisa 49 task.
-- **`npm run verify`**: hijau terakhir di CC-015 (24 file, 533 test). CC-072 menambah 29 test (diharapkan 26 file, 562 test), tetapi `verify` penuh **belum dijalankan** sesudahnya; yang hijau hanya `vitest --project web`, eslint, prettier, `tsc` web, dan `vite build`.
+- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074 (G2). Sisa 48 task. CC-074: AC 1 (teks shell dari kamus) **belum dicentang**, hanya terbukti untuk nav sementara; centang saat CC-073 memasang breadcrumb dan header lewat `useT()`.
+- **`npm run verify`**: hijau terakhir di CC-074 (28 file, 566 test).
 - **Node**: lokal v24. Node 20 belum diuji ulang sejak CC-090 (terakhir lolos 314 test di Docker, lihat bagian 7).
 - **Commit**: pemilik repo yang commit. Pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. Cek `git status -sb` untuk yang belum di-push.
-- **Backlog** (Claude Docs, rev 80): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
+- **Backlog** (Claude Docs, rev 81): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
   - Backlog: `https://claude.ai/artifact/9JhEHyYAfGbdEspd7yGmdi` (id `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299`)
   - Arsitektur: `https://claude.ai/artifact/Wi1pbDYivJM7MkPeF8ctno` (id `f0930578-8d3d-418a-81f1-589fc8622f74`)
   - Mockup v2: `https://claude.ai/artifact/WXBabwcVKiWBchD2sGfsHC` (artifact biasa, `list_files` / `read_file`)
@@ -36,6 +36,7 @@ Aturan kerja backlog (10 butir) tetap berlaku. Yang sering terlupa: tanpa panggi
 - `shared/src`: `domain.ts` (enum), `api.ts` (amplop galat, `ERROR_CODES`, `ValidationDetails`, health), `projects.ts`, `repos.ts`. Skema endpoint lain belum ada (G-2).
 - `fixtures/make-fixtures.ts` `makeFixtures(dir)` → `{root, repos}`; tiap repo `{name, role, path, remote, defaultBranch, specPath?, specCmd?, commits}` (`path` = nilai `local_path` untuk mendaftarkan repo). Test server mengimpornya dari `../../../../fixtures/make-fixtures.js` tanpa konfigurasi tambahan. Satu generasi ~2,5 dtk di Windows: bangkitkan sekali per berkas test (`beforeAll`, timeout 120 dtk). Pola `git/adapter.test.ts`: snapshot `status`/`HEAD`/branch semua repo di awal, bandingkan di `afterAll` (bukti read-only).
 - `web/src/components/ui/` (CC-072) + `/dev/ui` yang memperagakan semuanya. Gabung kelas lewat `cn()` dari `lib/cn.ts`. Test: `components/ui/ui.test.tsx`, `routes/dev.ui.test.tsx`.
+- `lib/i18n.ts` (CC-074): semua teks UI lewat `const t = useT(); t('nav.checks')`, kunci datar dari `locales/id.ts`. Bahasa baru = `const en: Messages` + satu baris di `i18n.ts`, komponen tidak berubah.
 
 ## 4. Keputusan yang masih mengikat
 
@@ -61,7 +62,7 @@ Yang butuh konfirmasi arsitek ada di `docs/OPEN-QUESTIONS.md`. D-9 digabung ke D
 - **D-20 `normalizeLocalPath`**: trim, `expandHome`, tolak non-absolut, `fs.realpath`, tolak bila bukan folder; tidak pernah menghitung dari cwd. Penolakan = `LocalPathError` (`local_path_*`). Tanda kutip di ujung path dibuang di rute (D-22), bukan di fungsi ini.
 - **D-21 API projects** (pola untuk endpoint berikutnya): skema di `shared` dengan **pesan galat kustom Indonesia per isian**, bukan locale zod. Slug tidak pernah berubah (PATCH hanya `name`, `description`). Slug bentrok → 409 `project_slug_taken` dengan `details: { slug }`. DELETE menghapus berkas dulu, baru baris DB (cascade), supaya bisa diulang bila gagal di tengah.
 - **D-22 API repos**: `PATCH /api/repos/:id` hanya `role`, `default_branch`, `spec_path`, `spec_cmd` (field lain dibuang diam-diam). Urutan POST: project ada → `normalizeLocalPath` → `name` aman (D-7) → `rev-parse` → branch → cek bentrok + INSERT sinkron (tanpa `await` di antaranya, jadi tidak ada balapan). Galat yang menunjuk satu isian, termasuk 409, membawa `details.fields` (`ValidationDetails`). **Bentrok nama tanpa membedakan huruf besar-kecil** (`COLLATE NOCASE` di pre-check, bukan di skema), karena `API.md` dan `api.md` adalah berkas yang sama di Windows dan macOS. DELETE menghapus berkas dulu (profil, cache, `runs/checks/<id>`), baru baris DB.
-- **D-23 Siap check** (CC-014): hanya `GET /api/projects/:id` mengembalikan `ProjectDetail` (`Project` + `ready_for_check` + `not_ready_reason`). Aturan `projectReadiness(roles)`: ≥1 `service` dan `service + microfrontend` ≥ 2; e2e tidak dihitung. Kalimat alasan berbahasa Indonesia dari server; bila CC-074 menuntut EN, ubah jadi kode + terjemahan di web (itu mengubah kontrak). `GET` daftar repo per project belum ada; CC-076/077 yang menentukan bentuknya.
+- **D-23 Siap check** (CC-014): hanya `GET /api/projects/:id` mengembalikan `ProjectDetail` (`Project` + `ready_for_check` + `not_ready_reason`). Aturan `projectReadiness(roles)`: ≥1 `service` dan `service + microfrontend` ≥ 2; e2e tidak dihitung. Kalimat alasan berbahasa Indonesia dari server; bila EN dipakai kelak, ubah jadi kode + terjemahan di web (itu mengubah kontrak). `GET` daftar repo per project belum ada; CC-076/077 yang menentukan bentuknya.
 - **D-24 Ref dan fetch** (CC-015): `POST /api/projects/:id/fetch` mencakup **semua repo termasuk e2e**. Logika di `repos/fetch.ts` `createProjectFetcher({db, git, concurrency})` karena CC-065 memakainya sebagai langkah 1 check: tidak pernah melempar karena kegagalan satu repo (consumer gagal → lanjut, provider gagal → check failed). `last_fetch_at` hanya ditulis bila berhasil. Paralel lewat `util/concurrency.ts` `mapLimit` (pakai ulang untuk `LLM_CONCURRENCY`, CC-017/040). `GET /api/repos/:id/refs`: branch `origin` dulu (default paling atas), lalu tag; tag beranotasi dikupas ke commit-nya. Tanpa `--tags`; folder repo yang hilang → 409 `repo_not_git`.
 
 **Web**
@@ -69,6 +70,7 @@ Yang butuh konfirmasi arsitek ada di `docs/OPEN-QUESTIONS.md`. D-9 digabung ke D
 - **D-12 Tailwind 4 CSS-first**: token di `globals.css` blok `@theme static`; tidak ada `tailwind.config.ts` (backlog menyebutnya, itu gaya Tailwind 3). Palet bawaan dikosongkan (`--color-*: initial`), jadi `bg-red-500` dst. tidak ada.
 - **D-14** `PlaceholderScreen` dan `__root.tsx` sementara; CC-073 menggantikan root, CC-076+ layar. Halaman `/dev/*` dikecualikan dari aturan i18n.
 - **D-25 Komponen UI** (CC-072): "shadcn" dibaca sebagai pola, bukan CLI. Komponen tulis tangan dengan Radix + `class-variance-authority` + `cn()`; `twMerge` polos membuang `text-on-surface`, jadi skala `text-body/label/title/headline/code` didaftarkan di `lib/cn.ts`. Select = `<select>` native. `SeverityChip` memakai kosakata domain `@cc/shared` (`break, warn, info, clean, spec_stale, cancelled, failed`); teks lewat `children`. Fokus keyboard = **satu aturan global** di `globals.css`. "Tanpa teks" dijaga test (render kosong → `body.textContent === ''`); satu pengecualian: sonner menambah `alt+T` ke `aria-label`, jadi `Toaster` mewajibkan `containerAriaLabel`. Angka mockup hanya untuk Button, field, chip, progress, NavRail, dialog; Tabs, Checkbox, Table, Toast mengikuti pola M3 terdekat, jadi periksa saat CC-076+ memakainya. `<Toaster>` baru dipasang di `/dev/ui`; CC-073 harus memasangnya di akar.
+- **D-26 i18n** (CC-074): satu bahasa (ID), tanpa library dan tanpa provider. `t(key)` belum mendukung `{param}`; task pertama yang butuh menambah `t(key, vars?)` di `i18n.ts` (kompatibel mundur). Nav sementara di `__root.tsx` dipasang ke kamus dengan **teks tampil yang sama** (`projects`, `checks`, `panduan`) agar `router.test.tsx` tidak berubah; teks akhir milik CC-073 (mockup: `Projects`, `Checks`, `aria-label` `Navigasi utama`, tanpa tombol bahasa).
 
 **Fixture** (CC-090)
 
@@ -89,9 +91,9 @@ G-1, G-3, G-4 sudah selesai.
 
 ## 6. Task berikutnya
 
-Tidak terblokir: **CC-016**, **CC-034**, **CC-074**, **CC-075**. CC-073 (app shell) `dep: CC-072, CC-074`, jadi kerjakan CC-074 (i18n) dulu.
+Tidak terblokir: **CC-016**, **CC-034**, **CC-073**, **CC-075**.
 
-- **G2** sisa: CC-073 – CC-075 (app shell, i18n, klien API+SSE). Urutan yang masuk akal: CC-074, lalu CC-073; CC-075 tidak terblokir.
+- **G2** sisa: CC-073, CC-075 (app shell, klien API+SSE). Urutan yang masuk akal: CC-073, lalu CC-075.
 - **G3**: CC-016–020 dan layar CC-076–078. Seterusnya ikuti tabel "Urutan eksekusi" di backlog.
 - Pertanyaan terbuka untuk pemilik (lockfile FastAPI, `spec_cmd` kantor, versi `oasdiff`, model dan batas biaya) belum dijawab. Tidak memblokir sampai CC-031 / CC-034 / CC-041; sebelum mengerjakan ketiganya, tanyakan dulu, jangan menebak (aturan kerja #9).
 
@@ -117,7 +119,7 @@ Tidak terblokir: **CC-016**, **CC-034**, **CC-074**, **CC-075**. CC-073 (app she
 
 Hanya `attrs.checked` pada `listItem` yang diubah; teks tidak boleh disentuh.
 
-1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":80}` untuk melihat apakah ada yang mengubah dokumen.
+1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":81}` untuk melihat apakah ada yang mengubah dokumen.
 2. **Jangan `view` seluruh tab**: di rev 79 (307 blok) panggilan itu time-out 300 dtk. Cari kartu dengan `{"kind":"search","text":"CC-0xx"}`, lalu `{"kind":"search","text":"dep: CC-0yy"}` untuk paragraf estimasi; daftar AC adalah `list kind=check` tepat setelah paragraf deskripsi, baca dengan `{"kind":"view","parentId":"<id list>"}`. Id `listItem` berbentuk `mmz53254xvt.<angka>`.
 3. `update` (`engine: "prose"`, `container: {"kind":"project","id":"43418ba4-..."}`) dengan `payload.ops` berisi `{"op":"set","target":{"kind":"blocks","ids":["mmz53254xvt.8804"]},"attrs":{"checked":true}}`; banyak op dalam satu panggilan boleh.
 4. Daftar "Tahap 1 disebut selesai bila ..." di akhir Doc dan bagian "Yang masih perlu jawaban Anda" **belum disentuh**.
