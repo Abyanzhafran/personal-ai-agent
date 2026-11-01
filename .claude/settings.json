@@ -1,0 +1,59 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CCE_PORT_FILE=\"C:\\Users\\prais\\.cce\\projects\\personal-ai-agent-98ee2d\\serve.port\" \"C:\\Users\\prais\\.cce\\hooks\\cce_hook.cmd\" SessionStart"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CCE_PORT_FILE=\"C:\\Users\\prais\\.cce\\projects\\personal-ai-agent-98ee2d\\serve.port\" \"C:\\Users\\prais\\.cce\\hooks\\cce_hook.cmd\" UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CCE_PORT_FILE=\"C:\\Users\\prais\\.cce\\projects\\personal-ai-agent-98ee2d\\serve.port\" \"C:\\Users\\prais\\.cce\\hooks\\cce_hook.cmd\" PostToolUse"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CCE_PORT_FILE=\"C:\\Users\\prais\\.cce\\projects\\personal-ai-agent-98ee2d\\serve.port\" \"C:\\Users\\prais\\.cce\\hooks\\cce_hook.cmd\" Stop"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CCE_PORT_FILE=\"C:\\Users\\prais\\.cce\\projects\\personal-ai-agent-98ee2d\\serve.port\" \"C:\\Users\\prais\\.cce\\hooks\\cce_hook.cmd\" SessionEnd"
+          }
+        ]
+      }
+    ]
+  }
+}

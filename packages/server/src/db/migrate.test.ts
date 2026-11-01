@@ -106,7 +106,9 @@ describe('skema', () => {
   });
 
   it('memuat kolom tambahan v2 dari mockup', () => {
-    expect(columns('repos')).toEqual(expect.arrayContaining(['profile_status', 'last_fetch_at']));
+    expect(columns('repos')).toEqual(
+      expect.arrayContaining(['profile_status', 'profile_error', 'last_fetch_at']),
+    );
     expect(columns('checks')).toContain('error');
     expect(columns('findings')).toEqual(
       expect.arrayContaining(['confidence', 'via_symbol', 'snippet_json']),
@@ -114,7 +116,9 @@ describe('skema', () => {
   });
 
   it('memuat seluruh kolom dari brief', () => {
-    expect(columns('projects')).toEqual(expect.arrayContaining(['id', 'name', 'description']));
+    expect(columns('projects')).toEqual(
+      expect.arrayContaining(['id', 'name', 'slug', 'description']),
+    );
     expect(columns('repos')).toEqual(
       expect.arrayContaining([
         'id',
@@ -226,6 +230,34 @@ describe('skema', () => {
     );
     expect(() => insert.run(projectId)).toThrow(/UNIQUE/);
     expect(() => insert.run(other)).not.toThrow();
+  });
+
+  it('name repo unik per project, tetapi boleh sama di project lain', () => {
+    const { projectId } = seedChain();
+    const other = Number(
+      db.prepare("INSERT INTO projects (name, slug) VALUES ('Lain', 'lain')").run().lastInsertRowid,
+    );
+    const insert = db.prepare(
+      "INSERT INTO repos (project_id, role, name, local_path, default_branch) VALUES (?, 'service', 'svc-order', '/r/lain', 'main')",
+    );
+    expect(() => insert.run(projectId)).toThrow(/UNIQUE/);
+    expect(() => insert.run(other)).not.toThrow();
+  });
+
+  it('profile_status default not_scanned, hanya menerima tiga nilai; profile_error default NULL', () => {
+    const { providerId } = seedChain();
+    const row = db
+      .prepare('SELECT profile_status, profile_error FROM repos WHERE id = ?')
+      .get(providerId);
+    expect(row).toEqual({ profile_status: 'not_scanned', profile_error: null });
+
+    const update = db.prepare('UPDATE repos SET profile_status = ? WHERE id = ?');
+    for (const status of ['not_scanned', 'pending_review', 'approved']) {
+      expect(() => update.run(status, providerId)).not.toThrow();
+    }
+    for (const status of ['scanning', 'skipped']) {
+      expect(() => update.run(status, providerId)).toThrow(/CHECK constraint/);
+    }
   });
 
   it('summary_json dan snippet_json harus JSON valid', () => {

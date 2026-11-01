@@ -22,11 +22,17 @@ CREATE TABLE IF NOT EXISTS repos (
   default_branch TEXT NOT NULL,
   spec_path      TEXT,
   spec_cmd       TEXT,
+  -- Hanya tiga nilai tersimpan. "Sedang dipindai" adalah status in-memory, "tidak dipindai"
+  -- diturunkan dari role e2e; keduanya tidak pernah ditulis ke kolom ini.
   profile_status TEXT NOT NULL DEFAULT 'not_scanned'
-    CHECK (profile_status IN ('not_scanned', 'scanning', 'pending_review', 'approved', 'skipped')),
+    CHECK (profile_status IN ('not_scanned', 'pending_review', 'approved')),
+  -- Alasan pemindaian profil terakhir gagal; NULL bila tidak ada.
+  profile_error  TEXT,
   last_fetch_at  TEXT,
   -- Repo yang sama boleh ada di project lain, tidak di project yang sama.
-  UNIQUE (project_id, local_path)
+  UNIQUE (project_id, local_path),
+  -- Profil ditulis ke contexts/projects/<slug>/<name>.md, jadi nama harus unik per project.
+  UNIQUE (project_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS checks (

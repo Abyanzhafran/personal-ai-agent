@@ -2,7 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConfigError, HOST, loadConfig, loadConfigOrExit, parseConfig } from './config.js';
+import {
+  ConfigError,
+  HOST,
+  loadConfig,
+  loadConfigOrExit,
+  parseConfig,
+  requireAnthropicApiKey,
+} from './config.js';
 
 const HOME = path.resolve(path.sep, 'fake-home');
 const REQUIRED_ENV = { ANTHROPIC_API_KEY: 'sk-test-secret', ANTHROPIC_MODEL: 'test-model' };
@@ -31,7 +38,6 @@ describe('parseConfig: nilai default', () => {
           "maxFilesPerCheck": 40,
           "oasdiffBin": "oasdiff",
           "port": 4711,
-          "promptVersion": "v1",
           "specCmdTimeoutMs": 180000,
           "workspaceDir": ".contract-check",
         }
@@ -54,7 +60,6 @@ describe('parseConfig: nilai default', () => {
         LLM_CONCURRENCY: '3',
         SPEC_CMD_TIMEOUT_MS: '5000',
         OASDIFF_BIN: '/opt/oasdiff',
-        PROMPT_VERSION: 'v7',
       },
       { homedir: HOME },
     );
@@ -65,34 +70,53 @@ describe('parseConfig: nilai default', () => {
       llmConcurrency: 3,
       specCmdTimeoutMs: 5000,
       oasdiffBin: '/opt/oasdiff',
-      promptVersion: 'v7',
     });
+  });
+
+  it('PROMPT_VERSION di env diabaikan: versi prompt diturunkan dari hash file prompt (CC-018)', () => {
+    const config = parseConfig({ ...REQUIRED_ENV, PROMPT_VERSION: 'v7' }, { homedir: HOME });
+    expect(config).not.toHaveProperty('promptVersion');
   });
 });
 
 describe('parseConfig: variabel wajib', () => {
-  it.each(['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL'])(
-    '%s kosong -> error yang menyebut nama variabelnya',
-    (name) => {
-      const env: Record<string, string | undefined> = { ...REQUIRED_ENV, [name]: '' };
-      expect(() => parseConfig(env)).toThrow(ConfigError);
-      expect(() => parseConfig(env)).toThrow(new RegExp(`${name}: wajib diisi`));
-    },
-  );
+  it('ANTHROPIC_MODEL kosong -> error yang menyebut nama variabelnya', () => {
+    const env: Record<string, string | undefined> = { ...REQUIRED_ENV, ANTHROPIC_MODEL: '' };
+    expect(() => parseConfig(env)).toThrow(ConfigError);
+    expect(() => parseConfig(env)).toThrow(/ANTHROPIC_MODEL: wajib diisi/);
+  });
 
   it('melaporkan semua variabel bermasalah sekaligus, bukan satu per satu', () => {
     const issues = issuesOf(() => parseConfig({ PORT: 'abc' }));
-    expect(issues.map((i) => i.variable).sort()).toEqual([
-      'ANTHROPIC_API_KEY',
-      'ANTHROPIC_MODEL',
-      'PORT',
-    ]);
+    expect(issues.map((i) => i.variable).sort()).toEqual(['ANTHROPIC_MODEL', 'PORT']);
   });
 
   it('tidak pernah mencetak nilai rahasia di pesan error', () => {
     // API key valid, tetapi PORT salah: pesan tidak boleh memuat key.
     const issues = issuesOf(() => parseConfig({ ...REQUIRED_ENV, PORT: 'abc' }));
     expect(JSON.stringify(issues)).not.toContain('sk-test-secret');
+  });
+});
+
+describe('ANTHROPIC_API_KEY: divalidasi saat Claude dipanggil, bukan saat start', () => {
+  const MODEL_ONLY = { ANTHROPIC_MODEL: 'test-model' };
+
+  it.each([
+    ['tidak ada', MODEL_ONLY],
+    ['kosong', { ...MODEL_ONLY, ANTHROPIC_API_KEY: '' }],
+  ])('start tanpa key (%s) lolos', (_label, env) => {
+    expect(parseConfig(env, { homedir: HOME }).anthropicApiKey).toBeUndefined();
+  });
+
+  it('requireAnthropicApiKey mengembalikan key bila ada', () => {
+    const config = parseConfig(REQUIRED_ENV, { homedir: HOME });
+    expect(requireAnthropicApiKey(config)).toBe('sk-test-secret');
+  });
+
+  it('requireAnthropicApiKey tanpa key -> ConfigError yang menyebut ANTHROPIC_API_KEY', () => {
+    const config = parseConfig(MODEL_ONLY, { homedir: HOME });
+    expect(() => requireAnthropicApiKey(config)).toThrow(ConfigError);
+    expect(() => requireAnthropicApiKey(config)).toThrow(/ANTHROPIC_API_KEY: wajib diisi/);
   });
 });
 
@@ -197,8 +221,8 @@ describe('loadConfigOrExit', () => {
     expect(exit).toHaveBeenCalledWith(1);
     expect(error).toHaveBeenCalledOnce();
     const message = String(error.mock.calls[0]?.[0]);
-    expect(message).toContain('ANTHROPIC_API_KEY');
     expect(message).toContain('ANTHROPIC_MODEL');
+    expect(message).not.toContain('ANTHROPIC_API_KEY');
   });
 
   it('config valid -> mengembalikan Config tanpa exit', () => {

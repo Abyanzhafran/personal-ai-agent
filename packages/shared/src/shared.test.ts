@@ -38,8 +38,8 @@ describe('enum domain (keputusan arsitek)', () => {
     expect(KINDS).toContain('spec_stale');
   });
 
-  it('status profil mencakup lima keadaan di UI Projects', () => {
-    expect(PROFILE_STATUSES).toHaveLength(5);
+  it('status profil tersimpan hanya tiga; "scanning" dan "skipped" bukan nilai tersimpan', () => {
+    expect([...PROFILE_STATUSES]).toEqual(['not_scanned', 'pending_review', 'approved']);
   });
 });
 

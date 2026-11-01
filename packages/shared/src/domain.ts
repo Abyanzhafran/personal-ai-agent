@@ -9,13 +9,14 @@ export const ROLES = ['service', 'microfrontend', 'e2e'] as const;
 export const Role = z.enum(ROLES);
 export type Role = z.infer<typeof Role>;
 
-/** Status hasil pemindaian profil discovery sebuah repo (kolom `repos.profile_status`). */
+/**
+ * Status profil discovery yang tersimpan (kolom `repos.profile_status`). "Sedang dipindai"
+ * adalah status in-memory dan "tidak dipindai" diturunkan dari role e2e, jadi keduanya bukan nilai.
+ */
 export const PROFILE_STATUSES = [
   'not_scanned', // Belum dipindai
-  'scanning', // Sedang dipindai
   'pending_review', // Menunggu review
   'approved', // Disetujui
-  'skipped', // Tidak dipindai (repo e2e)
 ] as const;
 export const ProfileStatus = z.enum(PROFILE_STATUSES);
 export type ProfileStatus = z.infer<typeof ProfileStatus>;

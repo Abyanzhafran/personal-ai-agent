@@ -18,9 +18,9 @@ export interface Config {
   readonly port: number;
   /** Path absolut. `~` sudah di-expand. */
   readonly workspaceDir: string;
-  readonly anthropicApiKey: string;
+  /** Tidak wajib saat start; panggilan Claude memintanya lewat {@link requireAnthropicApiKey}. */
+  readonly anthropicApiKey: string | undefined;
   readonly anthropicModel: string;
-  readonly promptVersion: string;
   readonly maxFilesPerCheck: number;
   readonly gitConcurrency: number;
   readonly llmConcurrency: number;
@@ -70,9 +70,8 @@ function integer(fallback: number, min: number, max: number = Number.MAX_SAFE_IN
 const VARIABLES = {
   PORT: integer(4711, 1, 65535),
   WORKSPACE_DIR: z.string().min(1).default('~/.contract-check'),
-  ANTHROPIC_API_KEY: requiredString(),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_MODEL: requiredString(),
-  PROMPT_VERSION: z.string().min(1).default('v1'),
   MAX_FILES_PER_CHECK: integer(40, 1),
   GIT_CONCURRENCY: integer(4, 1),
   LLM_CONCURRENCY: integer(4, 1),
@@ -123,7 +122,6 @@ export function parseConfig(
         workspaceDir: path.normalize(workspaceDir),
         anthropicApiKey: d.ANTHROPIC_API_KEY,
         anthropicModel: d.ANTHROPIC_MODEL,
-        promptVersion: d.PROMPT_VERSION,
         maxFilesPerCheck: d.MAX_FILES_PER_CHECK,
         gitConcurrency: d.GIT_CONCURRENCY,
         llmConcurrency: d.LLM_CONCURRENCY,
@@ -134,6 +132,17 @@ export function parseConfig(
   }
 
   throw new ConfigError(issues);
+}
+
+/**
+ * Dipanggil tepat sebelum panggilan Claude pertama, bukan saat start: `verify` dan e2e
+ * berjalan tanpa key. Galatnya `ConfigError` yang sama, jadi menyebut nama variabelnya.
+ */
+export function requireAnthropicApiKey(config: Config): string {
+  if (config.anthropicApiKey === undefined) {
+    throw new ConfigError([{ variable: 'ANTHROPIC_API_KEY', message: REQUIRED }]);
+  }
+  return config.anthropicApiKey;
 }
 
 function toIssues(error: z.ZodError, input: Record<string, string | undefined>): ConfigIssue[] {

@@ -16,7 +16,6 @@ function config(overrides: Partial<Config> = {}): Config {
     workspaceDir: path.join(tmp, 'workspace'),
     anthropicApiKey: 'k',
     anthropicModel: 'm',
-    promptVersion: 'v1',
     maxFilesPerCheck: 40,
     gitConcurrency: 4,
     llmConcurrency: 4,

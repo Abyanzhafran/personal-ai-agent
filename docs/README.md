@@ -10,19 +10,19 @@ Lihat [HANDOFF.md](./HANDOFF.md) untuk task yang sudah selesai, keputusan, dan l
 
 ## Prasyarat
 
-| Kebutuhan   | Versi                                  | Catatan                                                              |
-| ----------- | -------------------------------------- | -------------------------------------------------------------------- |
-| Node.js     | 20.19+ (diuji di 20.20 dan 24)         | `.nvmrc` = 20. Node 20 sudah EOL sejak April 2026, lihat HANDOFF D-1 |
-| npm         | 10+                                    | Workspaces                                                           |
-| git         | 2.30+                                  | Dipanggil lewat `runCommand()`                                       |
-| `oasdiff`   | >= 1.11 (belum dipakai sebelum CC-034) | Belum ada pengecekan di start                                        |
-| Akun Claude | API key + nama model                   | Wajib diisi di `.env`                                                |
+| Kebutuhan   | Versi                                  | Catatan                                                                    |
+| ----------- | -------------------------------------- | -------------------------------------------------------------------------- |
+| Node.js     | 20.19+ (diuji di 20.20 dan 24)         | `.nvmrc` = 20. Node 20 sudah EOL sejak April 2026, lihat HANDOFF D-1       |
+| npm         | 10+                                    | Workspaces                                                                 |
+| git         | 2.30+                                  | Dipanggil lewat `runCommand()`                                             |
+| `oasdiff`   | >= 1.11 (belum dipakai sebelum CC-034) | Belum ada pengecekan di start                                              |
+| Akun Claude | API key + nama model                   | Nama model wajib di `.env`; API key hanya dibutuhkan saat Claude dipanggil |
 
 ## Menjalankan
 
 ```bash
 npm install
-cp .env.example .env     # isi ANTHROPIC_API_KEY dan ANTHROPIC_MODEL
+cp .env.example .env     # isi ANTHROPIC_MODEL (dan ANTHROPIC_API_KEY untuk memanggil Claude)
 npm run dev              # server http://127.0.0.1:4711 + Vite http://127.0.0.1:5173 (proxy /api)
 ```
 
@@ -50,18 +50,17 @@ npm start -w @cc/server  # http://127.0.0.1:4711
 
 Dibaca dari `.env` di **root repo** (tidak di-commit), lalu ditimpa variabel proses. Semua divalidasi `packages/server/src/config.ts`; proses berhenti dengan pesan yang menyebut nama variabel bila ada yang salah. Contoh lengkap: `.env.example`.
 
-| Variabel              | Default             | Keterangan                                                                    |
-| --------------------- | ------------------- | ----------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`   | — (wajib)           | Tidak pernah dicetak ke log atau pesan error, tidak diwariskan ke proses anak |
-| `ANTHROPIC_MODEL`     | — (wajib)           | Nama model untuk discovery dan ekstraksi                                      |
-| `PORT`                | `4711`              | Host selalu `127.0.0.1`; tidak ada variabel untuk mengubahnya                 |
-| `WORKSPACE_DIR`       | `~/.contract-check` | Harus absolut atau diawali `~`                                                |
-| `PROMPT_VERSION`      | `v1`                | Dilipat bersama hash file prompt menjadi kunci cache ekstraksi                |
-| `MAX_FILES_PER_CHECK` | `40`                |                                                                               |
-| `GIT_CONCURRENCY`     | `4`                 |                                                                               |
-| `LLM_CONCURRENCY`     | `4`                 |                                                                               |
-| `SPEC_CMD_TIMEOUT_MS` | `180000`            |                                                                               |
-| `OASDIFF_BIN`         | `oasdiff`           | Satu-satunya binary selain `git` yang boleh dijalankan                        |
+| Variabel              | Default             | Keterangan                                                                                                                                |
+| --------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`   | — (opsional)        | Divalidasi saat panggilan Claude pertama, bukan saat start. Tidak pernah dicetak ke log atau pesan error, tidak diwariskan ke proses anak |
+| `ANTHROPIC_MODEL`     | — (wajib)           | Nama model untuk discovery dan ekstraksi                                                                                                  |
+| `PORT`                | `4711`              | Host selalu `127.0.0.1`; tidak ada variabel untuk mengubahnya                                                                             |
+| `WORKSPACE_DIR`       | `~/.contract-check` | Harus absolut atau diawali `~`                                                                                                            |
+| `MAX_FILES_PER_CHECK` | `40`                |                                                                                                                                           |
+| `GIT_CONCURRENCY`     | `4`                 |                                                                                                                                           |
+| `LLM_CONCURRENCY`     | `4`                 |                                                                                                                                           |
+| `SPEC_CMD_TIMEOUT_MS` | `180000`            |                                                                                                                                           |
+| `OASDIFF_BIN`         | `oasdiff`           | Satu-satunya binary selain `git` yang boleh dijalankan                                                                                    |
 
 ## Workspace
 

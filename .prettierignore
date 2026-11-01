@@ -6,3 +6,6 @@ package-lock.json
 .fixtures
 .workspace
 packages/web/src/routeTree.gen.ts
+# Dibuat oleh `cce init`; bukan kode proyek.
+.claude
+CLAUDE.md
