@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ApproveProfileRequest,
   CreateRepoRequest,
   Repo,
   RepoFetchResult,
   RepoIdParams,
+  RepoProfileResponse,
   RepoRef,
   UpdateRepoRequest,
 } from './repos.js';
@@ -105,6 +107,72 @@ describe('Repo', () => {
     };
     expect(Repo.parse(row)).toEqual(row);
     expect(Repo.safeParse({ ...row, profile_status: 'scanning' }).success).toBe(false);
+  });
+});
+
+describe('RepoProfileResponse', () => {
+  const profile = {
+    profile_md: 'Service FastAPI.',
+    spec_path: null,
+    spec_cmd: 'node scripts/export-openapi.mjs',
+    handler_dirs: [],
+    http_client: null,
+    base_url_pattern: null,
+  };
+
+  it('status mencakup nilai DB ditambah scanning dan skipped', () => {
+    for (const status of ['not_scanned', 'scanning', 'pending_review', 'approved', 'skipped']) {
+      const body = { status, error: null, profile: null };
+      expect(RepoProfileResponse.parse(body)).toEqual(body);
+    }
+    expect(
+      RepoProfileResponse.safeParse({ status: 'sedang dipindai', error: null, profile: null })
+        .success,
+    ).toBe(false);
+  });
+
+  it('profile membawa enam field draf; galat terakhir ikut bila ada', () => {
+    const body = { status: 'not_scanned', error: 'Discovery gagal: x', profile };
+    expect(RepoProfileResponse.parse(body)).toEqual(body);
+    expect(
+      RepoProfileResponse.safeParse({ ...body, profile: { ...profile, handler_dirs: 'src' } })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe('ApproveProfileRequest', () => {
+  it('profile_md dipakai persis seperti dikirim: spasi dan baris kosong di ujung tidak dibuang', () => {
+    const profile_md = '\n# Hasil edit  \n\nbaris dua\n\n';
+    expect(ApproveProfileRequest.parse({ profile_md, apply_spec_path: false }).profile_md).toBe(
+      profile_md,
+    );
+  });
+
+  it('spec_cmd: tidak dikirim tetap tidak ada; kosong, spasi, atau null menjadi null; teks di-trim', () => {
+    const base = { profile_md: 'x', apply_spec_path: true };
+    expect('spec_cmd' in ApproveProfileRequest.parse(base)).toBe(false);
+    for (const empty of ['', '   ', null]) {
+      expect(ApproveProfileRequest.parse({ ...base, spec_cmd: empty }).spec_cmd).toBeNull();
+    }
+    expect(ApproveProfileRequest.parse({ ...base, spec_cmd: ' make spec ' }).spec_cmd).toBe(
+      'make spec',
+    );
+  });
+
+  it('pesan galat berbahasa Indonesia per isian', () => {
+    expect(
+      messagesOf(ApproveProfileRequest.safeParse({ profile_md: '  \n', apply_spec_path: 1 })),
+    ).toEqual([
+      'profile_md: Profil tidak boleh kosong',
+      'apply_spec_path: apply_spec_path harus true atau false',
+    ]);
+    expect(messagesOf(ApproveProfileRequest.safeParse({ apply_spec_path: true }))).toEqual([
+      'profile_md: Profil wajib diisi',
+    ]);
+    expect(messagesOf(ApproveProfileRequest.safeParse(null))).toEqual([
+      ': Body harus berupa objek JSON',
+    ]);
   });
 });
 

@@ -41,6 +41,19 @@ export function createRepoRepository(db: Db) {
     `SELECT ${COLUMNS} FROM repos WHERE project_id = ? ORDER BY id`,
   );
   const markFetched = db.prepare('UPDATE repos SET last_fetch_at = ? WHERE id = ?');
+  const markScanned = db.prepare(
+    "UPDATE repos SET profile_status = 'pending_review', profile_error = NULL WHERE id = ?",
+  );
+  const markApproved = db.prepare(
+    `UPDATE repos SET profile_status = 'approved', profile_error = NULL,
+       spec_path = @specPath, spec_cmd = @specCmd WHERE id = @id`,
+  );
+  // Repo yang sudah disetujui tetap disetujui walau pindai ulang gagal; selain itu kembali belum dipindai.
+  const markScanFailed = db.prepare(
+    `UPDATE repos SET profile_error = @error,
+       profile_status = CASE profile_status WHEN 'approved' THEN 'approved' ELSE 'not_scanned' END
+     WHERE id = @id`,
+  );
   const remove = db.prepare('DELETE FROM repos WHERE id = ?');
   const selectProviderCheckIds = db.prepare('SELECT id FROM checks WHERE provider_repo_id = ?');
 
@@ -74,6 +87,24 @@ export function createRepoRepository(db: Db) {
     /** Mencatat fetch berhasil; `at` ISO-8601 UTC. */
     setLastFetchAt(id: number, at: string): void {
       markFetched.run(at, id);
+    },
+
+    /** Discovery berhasil: draf menunggu review dan galat lama dihapus. */
+    setProfileScanned(id: number): void {
+      markScanned.run(id);
+    },
+
+    /** Profil disetujui (CC-020): status `approved` bersama `spec_path` dan `spec_cmd` yang berlaku. */
+    setProfileApproved(
+      id: number,
+      specs: { specPath: string | null; specCmd: string | null },
+    ): void {
+      markApproved.run({ id, ...specs });
+    },
+
+    /** Discovery gagal: simpan alasannya (satu baris). Status kembali `not_scanned` kecuali sudah `approved`. */
+    setProfileScanFailed(id: number, error: string): void {
+      markScanFailed.run({ id, error });
     },
 
     /** Id check yang repo ini jadi provider-nya, untuk menghapus `runs/checks/<id>/`. */

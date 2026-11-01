@@ -10,13 +10,13 @@ Lihat [HANDOFF.md](./HANDOFF.md) untuk task yang sudah selesai, keputusan, dan l
 
 ## Prasyarat
 
-| Kebutuhan   | Versi                                  | Catatan                                                                    |
-| ----------- | -------------------------------------- | -------------------------------------------------------------------------- |
-| Node.js     | 20.19+ (diuji di 20.20 dan 24)         | `.nvmrc` = 20. Node 20 sudah EOL sejak April 2026, lihat HANDOFF D-1       |
-| npm         | 10+                                    | Workspaces                                                                 |
-| git         | 2.30+                                  | Dipanggil lewat `runCommand()`                                             |
-| `oasdiff`   | >= 1.11 (belum dipakai sebelum CC-034) | Belum ada pengecekan di start                                              |
-| Akun Claude | API key + nama model                   | Nama model wajib di `.env`; API key hanya dibutuhkan saat Claude dipanggil |
+| Kebutuhan   | Versi                          | Catatan                                                                       |
+| ----------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| Node.js     | 20.19+ (diuji di 20.20 dan 24) | `.nvmrc` = 20. Node 20 sudah EOL sejak April 2026, lihat HANDOFF D-1          |
+| npm         | 10+                            | Workspaces                                                                    |
+| git         | 2.30+                          | Dipanggil lewat `runCommand()`                                                |
+| `oasdiff`   | >= 1.11                        | Dicek saat start; hilang atau terlalu lama: server tetap hidup, check ditolak |
+| Akun Claude | API key + nama model           | Nama model wajib di `.env`; API key hanya dibutuhkan saat Claude dipanggil    |
 
 ## Menjalankan
 
@@ -70,7 +70,7 @@ Data aplikasi ada di `WORKSPACE_DIR`, tidak pernah di dalam repo user:
 ```
 <WORKSPACE_DIR>/
 ├── app.db                      # SQLite (WAL), 4 tabel
-├── contexts/projects/<slug>/<repo>.md   # profil discovery yang disetujui
+├── contexts/projects/<slug>/<repo>.md   # profil discovery yang disetujui (<repo>.json = draf)
 ├── cache/specs/<repoId>/<sha>-<cmdhash>.json
 ├── cache/extract/<repoId>/<blob>-<pv>.json
 └── runs/checks/<checkId>/      # artefak check + worktree sementara wt-<sha>/

@@ -28,10 +28,20 @@ import { createCommandRunner } from '../proc/run-command.js';
 import { projectRoutes } from '../projects/routes.js';
 import { WorkspaceLayout } from '../workspace/layout.js';
 import { WorkspaceStore } from '../workspace/store.js';
+import type { DiscoveryRunner } from './discovery.js';
 import { repoRoutes } from './routes.js';
 
 // Tiap POST menjalankan tiga perintah git; di Windows itu beberapa ratus milidetik.
 vi.setConfig({ testTimeout: 30_000 });
+
+/** Discovery diuji di discovery.test.ts; di sini dimatikan agar POST repo tidak memulai kerja latar belakang. */
+const discovery: DiscoveryRunner = {
+  isRunning: () => false,
+  start: () => undefined,
+  profile: () => Promise.reject(new Error('tidak dipakai di test ini')),
+  approve: () => Promise.reject(new Error('tidak dipakai di test ini')),
+  stop: () => Promise.resolve(),
+};
 
 const rawGit = (repo: string, ...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
@@ -84,7 +94,10 @@ beforeEach(async () => {
   migrate(db);
   const git = createGitAdapter(createCommandRunner({ oasdiffBin: 'oasdiff' }));
   const config = { gitConcurrency: 4 };
-  const routes = [projectRoutes({ db, workspace }), repoRoutes({ db, workspace, git, config })];
+  const routes = [
+    projectRoutes({ db, workspace }),
+    repoRoutes({ db, workspace, git, config, discovery }),
+  ];
   app = createApp({
     logger: createLogger({ level: 'silent' }),
     registerRoutes: (api) => routes.forEach((register) => register(api)),
@@ -677,12 +690,13 @@ describe('DELETE /api/repos/:id', () => {
       checkDir: layout.checkRunDir(checkId),
       checkArtifact: layout.checkArtifact(checkId, 'spec-base.json'),
       profiles: [provider, consumer].map((r) => layout.repoProfileFile(project.slug, r.name)),
+      drafts: [provider, consumer].map((r) => layout.repoProfileDraftFile(project.slug, r.name)),
       caches: [provider, consumer].flatMap((r) => [
         layout.specCacheFile(r.id, 'abcdef1', 'ab12'),
         layout.extractCacheFile(r.id, 'abcdef1', 'pv1'),
       ]),
     };
-    for (const file of [files.checkArtifact, ...files.profiles, ...files.caches]) {
+    for (const file of [files.checkArtifact, ...files.profiles, ...files.drafts, ...files.caches]) {
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, '{}');
     }
@@ -701,10 +715,12 @@ describe('DELETE /api/repos/:id', () => {
     expect([count('checks'), count('findings')]).toEqual([0, 0]);
     expect(await exists(files.checkDir)).toBe(false);
     expect(await exists(files.profiles[0] as string)).toBe(false);
+    expect(await exists(files.drafts[0] as string)).toBe(false);
     expect(await exists(files.caches[0] as string)).toBe(false);
     expect(await exists(files.caches[1] as string)).toBe(false);
     // Milik consumer tetap ada.
     expect(await exists(files.profiles[1] as string)).toBe(true);
+    expect(await exists(files.drafts[1] as string)).toBe(true);
     expect(await exists(files.caches[2] as string)).toBe(true);
   });
 

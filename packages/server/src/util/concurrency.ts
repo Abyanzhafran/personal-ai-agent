@@ -19,3 +19,25 @@ export async function mapLimit<T, R>(
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
 }
+
+/**
+ * Pintu antre untuk pekerjaan yang datang satu-satu (bukan daftar yang sudah ada): `run(fn)`
+ * menjalankan `fn` bila jatah `limit` masih ada, selain itu menunggu giliran (urutan datang).
+ * Galat dari `fn` merambat ke pemanggil dan jatahnya tetap dilepas.
+ */
+export function createLimiter(limit: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return async (fn) => {
+    if (active < limit) active++;
+    else await new Promise<void>((resolve) => waiting.push(resolve));
+    try {
+      return await fn();
+    } finally {
+      // Jatah diserahkan langsung ke antrean terdepan; `active` tidak turun-naik di antaranya.
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
+    }
+  };
+}

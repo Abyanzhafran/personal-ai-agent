@@ -1,10 +1,12 @@
 import path from 'node:path';
 import {
+  ApproveProfileRequest,
   CreateRepoRequest,
   ERROR_CODES,
   ProjectIdParams,
   RepoIdParams,
   UpdateRepoRequest,
+  type Repo,
   type RepoRef,
   type ValidationDetails,
 } from '@cc/shared';
@@ -19,6 +21,7 @@ import { validated } from '../http/validate.js';
 import { createProjectRepository } from '../projects/repository.js';
 import { assertSafeSegment, WorkspacePathError } from '../workspace/layout.js';
 import type { WorkspaceStore } from '../workspace/store.js';
+import type { DiscoveryRunner } from './discovery.js';
 import { createProjectFetcher } from './fetch.js';
 import { createRepoRepository } from './repository.js';
 
@@ -27,6 +30,7 @@ export interface RepoRouteDeps {
   readonly workspace: WorkspaceStore;
   readonly git: GitAdapter;
   readonly config: Pick<Config, 'gitConcurrency'>;
+  readonly discovery: DiscoveryRunner;
 }
 
 const projectNotFound = () =>
@@ -76,7 +80,13 @@ function assertUsableName(name: string): void {
 }
 
 /** Rute repo (CC-013). Dipasang lewat `registerRoutes` di bootstrap. */
-export function repoRoutes({ db, workspace, git, config }: RepoRouteDeps): (api: Router) => void {
+export function repoRoutes({
+  db,
+  workspace,
+  git,
+  config,
+  discovery,
+}: RepoRouteDeps): (api: Router) => void {
   const projects = createProjectRepository(db);
   const repos = createRepoRepository(db);
   const fetcher = createProjectFetcher({ db, git, concurrency: config.gitConcurrency });
@@ -121,6 +131,24 @@ export function repoRoutes({ db, workspace, git, config }: RepoRouteDeps): (api:
     return resolved;
   }
 
+  /** Discovery dan persetujuan profil tidak berlaku untuk repo e2e dan tidak boleh menyela scan yang berjalan. */
+  function assertDiscoverable(repo: Repo): void {
+    if (repo.role === 'e2e') {
+      throw new HttpError(
+        409,
+        ERROR_CODES.discovery_not_applicable,
+        'Repo e2e tidak dipindai oleh discovery',
+      );
+    }
+    if (discovery.isRunning(repo.id)) {
+      throw new HttpError(
+        409,
+        ERROR_CODES.discovery_in_progress,
+        'Discovery repo ini sedang berjalan. Tunggu sampai selesai.',
+      );
+    }
+  }
+
   return (api) => {
     api.post(
       '/projects/:id/repos',
@@ -156,6 +184,8 @@ export function repoRoutes({ db, workspace, git, config }: RepoRouteDeps): (api:
                   `Nama repo "${name}" sudah dipakai repo lain di project ini. Isi nama lain.`,
                 );
           }
+          // Discovery jalan di latar belakang; repo berikutnya tidak menunggu. e2e tidak dipindai.
+          if (result.repo.role !== 'e2e') discovery.start(result.repo);
           res.status(201).json(result.repo);
         },
       ),
@@ -214,6 +244,48 @@ export function repoRoutes({ db, workspace, git, config }: RepoRouteDeps): (api:
         ];
         res.json(refs);
       }),
+    );
+
+    api.get(
+      '/repos/:id/profile',
+      validated({ params: RepoIdParams }, async ({ params }, _req, res) => {
+        const repo = repos.get(params.id);
+        if (!repo) throw repoNotFound();
+        res.json(await discovery.profile(repo));
+      }),
+    );
+
+    // Pindai (ulang) manual. 202: hasilnya dipantau lewat GET /repos/:id/profile.
+    api.post(
+      '/repos/:id/discovery',
+      validated({ params: RepoIdParams }, async ({ params }, _req, res) => {
+        const repo = repos.get(params.id);
+        if (!repo) throw repoNotFound();
+        assertDiscoverable(repo);
+        discovery.start(repo);
+        res.status(202).json(await discovery.profile(repo));
+      }),
+    );
+
+    api.put(
+      '/repos/:id/profile',
+      validated(
+        { params: RepoIdParams, body: ApproveProfileRequest },
+        async ({ params, body }, _req, res) => {
+          const repo = repos.get(params.id);
+          if (!repo) throw repoNotFound();
+          assertDiscoverable(repo);
+          const approved = await discovery.approve(repo, body);
+          if (!approved) {
+            throw new HttpError(
+              409,
+              ERROR_CODES.profile_not_ready,
+              'Repo ini belum punya draf profil. Jalankan discovery dulu.',
+            );
+          }
+          res.json(approved);
+        },
+      ),
     );
 
     api.post(

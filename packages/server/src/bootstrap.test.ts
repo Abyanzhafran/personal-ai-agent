@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Config } from './config.js';
 import { startApp, type RunningApp } from './bootstrap.js';
+import { OasdiffUnavailableError } from './diff/oasdiff.js';
 import { createLogger } from './logger.js';
 
 let tmp: string;
@@ -98,6 +99,61 @@ describe('startApp', () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('repo_not_git');
     expect((await fetch(`${base}/repos/1`, { method: 'DELETE' })).status).toBe(404);
+  });
+
+  it('memasang rute discovery: profil dan pindai ulang repo yang tidak ada → 404 repo_not_found', async () => {
+    app = await startApp(config(), { logger: silent() });
+    const base = `http://127.0.0.1:${app.port}/api/repos/999`;
+
+    for (const res of [
+      await fetch(`${base}/profile`),
+      await fetch(`${base}/discovery`, { method: 'POST' }),
+    ]) {
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe('repo_not_found');
+    }
+  });
+
+  describe('cek oasdiff saat start (CC-034)', () => {
+    const capture = () => {
+      const lines: { level: number; msg: string }[] = [];
+      const logger = createLogger({
+        level: 'debug',
+        destination: {
+          write: (line: string) => lines.push(JSON.parse(line) as (typeof lines)[number]),
+        },
+      });
+      return { lines, logger };
+    };
+
+    it('tidak terpasang: server tetap hidup, log peringatan menyebut cara pasang, check ditolak lewat assertAvailable', async () => {
+      const { lines, logger } = capture();
+      app = await startApp(config({ oasdiffBin: 'oasdiff-tidak-terpasang-xyz' }), { logger });
+
+      expect((await fetch(`http://127.0.0.1:${app.port}/api/health`)).status).toBe(200);
+      expect(await app.context.oasdiff.capability()).toMatchObject({
+        ok: false,
+        reason: 'missing',
+      });
+      await expect(app.context.oasdiff.assertAvailable()).rejects.toBeInstanceOf(
+        OasdiffUnavailableError,
+      );
+      const warning = lines.find((line) => line.msg.includes('oasdiff tidak ditemukan'));
+      expect(warning?.level).toBe(40); // warn
+      expect(warning?.msg).toContain('OASDIFF_BIN');
+    });
+
+    it('terpasang dengan versi memadai: dicatat sekali saat start', async () => {
+      const { lines, logger } = capture();
+      // `node` berpura-pura menjadi oasdiff: `--version` mencetak versinya.
+      app = await startApp(config({ oasdiffBin: process.execPath }), { logger });
+
+      expect(await app.context.oasdiff.capability()).toEqual({
+        ok: true,
+        version: process.versions.node,
+      });
+      expect(lines.filter((line) => line.msg === 'oasdiff siap')).toHaveLength(1);
+    });
   });
 
   it('port yang sudah dipakai -> EADDRINUSE', async () => {

@@ -3,11 +3,14 @@ import type { AddressInfo } from 'node:net';
 import type { Config } from './config.js';
 import { openDatabase, type Db } from './db/database.js';
 import { migrate } from './db/migrate.js';
+import { createOasdiff, type Oasdiff } from './diff/oasdiff.js';
 import { createGitAdapter, type GitAdapter } from './git/adapter.js';
 import { createApp, type AppDeps } from './http/app.js';
+import { createLlmClient } from './llm/client.js';
 import type { Logger } from './logger.js';
 import { createCommandRunner, type CommandRunner } from './proc/run-command.js';
 import { projectRoutes } from './projects/routes.js';
+import { createDiscoveryRunner, type DiscoveryRunner } from './repos/discovery.js';
 import { repoRoutes } from './repos/routes.js';
 import { WorkspaceLayout } from './workspace/layout.js';
 import { WorkspaceStore } from './workspace/store.js';
@@ -20,6 +23,8 @@ export interface AppContext {
   readonly workspace: WorkspaceStore;
   readonly runner: CommandRunner;
   readonly git: GitAdapter;
+  readonly discovery: DiscoveryRunner;
+  readonly oasdiff: Oasdiff;
 }
 
 export interface RunningApp {
@@ -54,14 +59,23 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
     oasdiffBin: config.oasdiffBin,
     shellRoot: layout.checksDir,
   });
+  const git = createGitAdapter(runner);
+  const llm = createLlmClient({ config, logger });
   const context: AppContext = {
     config,
     logger,
     db,
     workspace,
     runner,
-    git: createGitAdapter(runner),
+    git,
+    discovery: createDiscoveryRunner({ db, workspace, git, llm, logger, config }),
+    oasdiff: createOasdiff({ runner, bin: config.oasdiffBin }),
   };
+
+  // oasdiff yang hilang atau terlalu lama tidak menghentikan server; check-nya yang ditolak (CC-060).
+  const oasdiff = await context.oasdiff.capability();
+  if (oasdiff.ok) logger.info({ version: oasdiff.version }, 'oasdiff siap');
+  else logger.warn({ reason: oasdiff.reason }, oasdiff.message);
 
   // `createApp` hanya menerima satu fungsi `registerRoutes`; rute tiap fitur digabung di sini.
   const routes = [projectRoutes(context), repoRoutes(context)];
@@ -92,7 +106,11 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
     server,
     port,
     async close() {
+      // stop() mengabort lebih dulu (sinkron), baru proses git dibunuh: kegagalan karena shutdown
+      // tidak boleh tercatat sebagai galat discovery. DB baru ditutup setelah semua job berhenti.
+      const discoveryStopped = context.discovery.stop();
       runner.killAll();
+      await discoveryStopped;
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
         server.closeAllConnections();

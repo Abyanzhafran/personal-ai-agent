@@ -33,6 +33,12 @@ export const ERROR_CODES = {
   local_path_not_absolute: 'local_path_not_absolute',
   local_path_missing: 'local_path_missing',
   local_path_not_directory: 'local_path_not_directory',
+  /** Discovery repo ini sedang berjalan (409). Pantau lewat `GET /api/repos/:id/profile`. */
+  discovery_in_progress: 'discovery_in_progress',
+  /** Repo `e2e` tidak pernah dipindai (409). */
+  discovery_not_applicable: 'discovery_not_applicable',
+  /** `PUT /api/repos/:id/profile` sebelum ada draf discovery (409). */
+  profile_not_ready: 'profile_not_ready',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */

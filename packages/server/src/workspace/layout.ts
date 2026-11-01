@@ -109,6 +109,16 @@ export class WorkspaceLayout {
     );
   }
 
+  /** `contexts/projects/<slug>/<repoName>.json` — draf discovery (CC-019); `.md` milik profil yang disetujui. */
+  repoProfileDraftFile(slug: string, repoName: string): string {
+    return this.join(
+      'contexts',
+      'projects',
+      assertSafeSegment(slug, 'slug project'),
+      `${assertSafeSegment(repoName, 'nama repo')}.json`,
+    );
+  }
+
   /** `cache/specs/<repoId>/<sha>-<cmdHash>.json`. Dikunci dengan id repo, bukan nama, agar tidak bentrok antar project. */
   specCacheFile(repoId: number, sha: string, cmdHash: string): string {
     assertMatches(sha, SHA, 'sha');

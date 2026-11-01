@@ -141,7 +141,7 @@ export class WorkspaceStore {
   }
 
   /**
-   * Membersihkan milik satu repo: profilnya, cache spec dan ekstraksi (dikunci id repo), dan
+   * Membersihkan milik satu repo: profil beserta drafnya, cache spec dan ekstraksi (dikunci id repo), dan
    * `runs/checks/<id>/` untuk check yang repo ini jadi provider-nya (baris check ikut terhapus
    * lewat cascade). Folder repo di disk user tidak disentuh.
    */
@@ -152,6 +152,7 @@ export class WorkspaceStore {
     checkIds: readonly number[];
   }): Promise<void> {
     await this.remove(this.layout.repoProfileFile(repo.projectSlug, repo.name));
+    await this.remove(this.layout.repoProfileDraftFile(repo.projectSlug, repo.name));
     await this.remove(this.layout.repoSpecCacheDir(repo.id));
     await this.remove(this.layout.repoExtractCacheDir(repo.id));
     for (const checkId of repo.checkIds) {

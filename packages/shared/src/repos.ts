@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProfileStatus, ROLES, Role } from './domain.js';
+import { PROFILE_STATUSES, ProfileStatus, ROLES, Role } from './domain.js';
 
 /**
  * Kontrak endpoint repo (CC-013): `POST /api/projects/:id/repos`, `PATCH` dan `DELETE /api/repos/:id`.
@@ -100,6 +100,53 @@ export const RepoFetchResult = z.object({
   last_fetch_at: z.string().nullable(),
 });
 export type RepoFetchResult = z.infer<typeof RepoFetchResult>;
+
+/**
+ * Draf discovery (CC-019), disimpan di `contexts/projects/<slug>/<repo>.json`. Enam field yang sama
+ * dengan `DiscoveryOutput` di server; test server menjaga keduanya sejalan.
+ */
+export const RepoProfile = z.object({
+  profile_md: z.string(),
+  spec_path: z.string().nullable(),
+  spec_cmd: z.string().nullable(),
+  handler_dirs: z.array(z.string()),
+  http_client: z.string().nullable(),
+  base_url_pattern: z.string().nullable(),
+});
+export type RepoProfile = z.infer<typeof RepoProfile>;
+
+/** Nilai DB ditambah dua status turunan: `scanning` dari job in-memory, `skipped` dari role e2e. */
+export const REPO_PROFILE_STATUSES = [...PROFILE_STATUSES, 'scanning', 'skipped'] as const;
+
+/**
+ * `GET /api/repos/:id/profile`; `POST /api/repos/:id/discovery` membalas 202 dengan bentuk yang sama
+ * (status `scanning`).
+ */
+export const RepoProfileResponse = z.object({
+  status: z.enum(REPO_PROFILE_STATUSES),
+  /** Satu baris alasan discovery terakhir gagal; null bila tidak ada. */
+  error: z.string().nullable(),
+  /** Draf discovery; null selama belum ada (`not_scanned`, `skipped`). */
+  profile: RepoProfile.nullable(),
+});
+export type RepoProfileResponse = z.infer<typeof RepoProfileResponse>;
+
+/**
+ * `PUT /api/repos/:id/profile` (CC-020): menyetujui profil. `profile_md` dipakai persis seperti dikirim
+ * (hasil edit user, tanpa trim). `apply_spec_path` true menyalin `spec_path` draf ke repo (draf null =
+ * tidak diubah). `spec_cmd` tidak dikirim = tidak berubah; kosong = null. Membalas `RepoProfileResponse`.
+ */
+export const ApproveProfileRequest = z.object(
+  {
+    profile_md: z
+      .string({ error: 'Profil wajib diisi' })
+      .refine((value) => value.trim() !== '', 'Profil tidak boleh kosong'),
+    apply_spec_path: z.boolean({ error: 'apply_spec_path harus true atau false' }),
+    spec_cmd: nullableText('Perintah spec').optional(),
+  },
+  { error: 'Body harus berupa objek JSON' },
+);
+export type ApproveProfileRequest = z.infer<typeof ApproveProfileRequest>;
 
 const INVALID_REPO_ID = 'Id repo tidak valid';
 
