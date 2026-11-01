@@ -95,3 +95,4 @@ docs/             README, RUNBOOK (CC-095), HANDOFF, OPEN-QUESTIONS
 ## Halaman pengembang
 
 - `/dev/tokens` — seluruh token desain Material 3 (warna, radius, font, skala teks).
+- `/dev/ui` — setiap komponen dasar (`packages/web/src/components/ui/`) beserta variannya.
