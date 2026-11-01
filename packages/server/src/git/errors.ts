@@ -9,6 +9,19 @@ export class GitError extends Error {
   }
 }
 
+export type LocalPathErrorCode =
+  | 'local_path_empty'
+  | 'local_path_not_absolute'
+  | 'local_path_missing'
+  | 'local_path_not_directory';
+
+/** Path ketikan user tidak bisa dipakai sebagai folder repo. Pesannya siap tampil di field dialog. */
+export class LocalPathError extends GitError {
+  constructor(code: LocalPathErrorCode, message: string) {
+    super(code, message);
+  }
+}
+
 /** Branch, tag, atau SHA tidak ada di repo (atau berawalan '-', yang tidak pernah dianggap ref). */
 export class RefNotFoundError extends GitError {
   constructor(readonly ref: string) {
