@@ -76,6 +76,31 @@ export const UpdateRepoRequest = z.object(
 );
 export type UpdateRepoRequest = z.infer<typeof UpdateRepoRequest>;
 
+/**
+ * Satu ref yang bisa dipilih sebagai base atau head (CC-015). `GET /api/repos/:id/refs` mengembalikan
+ * array biasa: branch `origin` dulu (cabang default paling atas, sisanya urut nama), lalu tag urut nama.
+ */
+export const RepoRef = z.object({
+  /** Branch tanpa awalan `origin/` (`feature/xyz`), atau nama tag (`v1.2.0`). */
+  name: z.string(),
+  kind: z.enum(['branch', 'tag']),
+  /** Commit yang ditunjuk. */
+  sha: z.string(),
+});
+export type RepoRef = z.infer<typeof RepoRef>;
+
+/** Hasil fetch satu repo. `POST /api/projects/:id/fetch` mengembalikan array ini, satu entri per repo. */
+export const RepoFetchResult = z.object({
+  repo_id: z.number().int(),
+  name: z.string(),
+  ok: z.boolean(),
+  /** Satu baris alasan bila `ok` false; null bila berhasil. */
+  error: z.string().nullable(),
+  /** Waktu fetch berhasil terakhir (ISO-8601 UTC); tetap nilai lama bila fetch ini gagal. */
+  last_fetch_at: z.string().nullable(),
+});
+export type RepoFetchResult = z.infer<typeof RepoFetchResult>;
+
 const INVALID_REPO_ID = 'Id repo tidak valid';
 
 export const RepoIdParams = z.object({

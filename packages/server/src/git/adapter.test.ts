@@ -311,6 +311,25 @@ describe('forEachRefRemotes', () => {
   });
 });
 
+describe('forEachRefTags', () => {
+  it('kosong bila repo tidak punya tag (fixture)', async () => {
+    expect(await adapter.forEachRefTags(order().path)).toEqual([]);
+  });
+
+  it('tag ringan dan beranotasi sama-sama menunjuk commit, urut menurut nama', async () => {
+    const head = rawGit(extra, 'rev-parse', 'HEAD');
+    rawGit(extra, 'tag', 'v2-ringan');
+    rawGit(extra, 'tag', '--annotate', '--message', 'rilis', 'v1-anotasi');
+
+    // Objek tag beranotasi berbeda dari commit; adapter harus mengupasnya.
+    expect(rawGit(extra, 'rev-parse', 'v1-anotasi')).not.toBe(head);
+    expect(await adapter.forEachRefTags(extra)).toEqual([
+      { name: 'v1-anotasi', sha: head },
+      { name: 'v2-ringan', sha: head },
+    ]);
+  });
+});
+
 describe('fetchPrune', () => {
   it('mengambil branch baru dari remote dan memangkas yang sudah dihapus', async () => {
     const { remote, path: repo, commits } = mfe();

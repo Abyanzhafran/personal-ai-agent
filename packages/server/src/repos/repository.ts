@@ -37,6 +37,10 @@ export function createRepoRepository(db: Db) {
     `UPDATE repos SET role = @role, default_branch = @defaultBranch, spec_path = @specPath,
        spec_cmd = @specCmd WHERE id = @id`,
   );
+  const selectByProject = db.prepare(
+    `SELECT ${COLUMNS} FROM repos WHERE project_id = ? ORDER BY id`,
+  );
+  const markFetched = db.prepare('UPDATE repos SET last_fetch_at = ? WHERE id = ?');
   const remove = db.prepare('DELETE FROM repos WHERE id = ?');
   const selectProviderCheckIds = db.prepare('SELECT id FROM checks WHERE provider_repo_id = ?');
 
@@ -62,6 +66,14 @@ export function createRepoRepository(db: Db) {
     update(id: number, input: RepoChanges): Repo | undefined {
       update.run({ id, ...input });
       return get(id);
+    },
+
+    /** Semua repo project, urut menurut id (urutan didaftarkan). */
+    listByProject: (projectId: number): Repo[] => selectByProject.all(projectId) as Repo[],
+
+    /** Mencatat fetch berhasil; `at` ISO-8601 UTC. */
+    setLastFetchAt(id: number, at: string): void {
+      markFetched.run(at, id);
     },
 
     /** Id check yang repo ini jadi provider-nya, untuk menghapus `runs/checks/<id>/`. */

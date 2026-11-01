@@ -5,9 +5,11 @@ import {
   ProjectIdParams,
   RepoIdParams,
   UpdateRepoRequest,
+  type RepoRef,
   type ValidationDetails,
 } from '@cc/shared';
 import type { Router } from 'express';
+import type { Config } from '../config.js';
 import type { Db } from '../db/database.js';
 import { LocalPathError, RefNotFoundError } from '../git/errors.js';
 import type { GitAdapter } from '../git/adapter.js';
@@ -17,12 +19,14 @@ import { validated } from '../http/validate.js';
 import { createProjectRepository } from '../projects/repository.js';
 import { assertSafeSegment, WorkspacePathError } from '../workspace/layout.js';
 import type { WorkspaceStore } from '../workspace/store.js';
+import { createProjectFetcher } from './fetch.js';
 import { createRepoRepository } from './repository.js';
 
 export interface RepoRouteDeps {
   readonly db: Db;
   readonly workspace: WorkspaceStore;
   readonly git: GitAdapter;
+  readonly config: Pick<Config, 'gitConcurrency'>;
 }
 
 const projectNotFound = () =>
@@ -72,9 +76,10 @@ function assertUsableName(name: string): void {
 }
 
 /** Rute repo (CC-013). Dipasang lewat `registerRoutes` di bootstrap. */
-export function repoRoutes({ db, workspace, git }: RepoRouteDeps): (api: Router) => void {
+export function repoRoutes({ db, workspace, git, config }: RepoRouteDeps): (api: Router) => void {
   const projects = createProjectRepository(db);
   const repos = createRepoRepository(db);
+  const fetcher = createProjectFetcher({ db, git, concurrency: config.gitConcurrency });
 
   /**
    * Validasi saat simpan: folder repo git yang punya `origin/<branch>`. Mengembalikan branch yang
@@ -179,6 +184,45 @@ export function repoRoutes({ db, workspace, git }: RepoRouteDeps): (api: Router)
           res.json(updated);
         },
       ),
+    );
+
+    api.get(
+      '/repos/:id/refs',
+      validated({ params: RepoIdParams }, async ({ params }, _req, res) => {
+        const repo = repos.get(params.id);
+        if (!repo) throw repoNotFound();
+        // Folder yang dipindah atau dihapus user sesudah didaftarkan: jawab jelas, bukan 500.
+        if (!(await git.isInsideWorkTree(repo.local_path))) {
+          throw new HttpError(
+            409,
+            ERROR_CODES.repo_not_git,
+            `Folder repo tidak lagi berupa repo git: ${repo.local_path}`,
+          );
+        }
+        const [branches, tags] = await Promise.all([
+          git.forEachRefRemotes(repo.local_path),
+          git.forEachRefTags(repo.local_path),
+        ]);
+        // Cabang default paling atas; sisanya tetap urut nama seperti dari git.
+        const isDefault = (branch: { name: string }) => branch.name === repo.default_branch;
+        const refs: RepoRef[] = [
+          ...[...branches.filter(isDefault), ...branches.filter((b) => !isDefault(b))].map((b) => ({
+            ...b,
+            kind: 'branch' as const,
+          })),
+          ...tags.map((t) => ({ ...t, kind: 'tag' as const })),
+        ];
+        res.json(refs);
+      }),
+    );
+
+    api.post(
+      '/projects/:id/fetch',
+      validated({ params: ProjectIdParams }, async ({ params }, _req, res) => {
+        if (!projects.get(params.id)) throw projectNotFound();
+        // 200 walau ada repo yang gagal: kegagalan per repo ada di isi respons.
+        res.json(await fetcher.fetchProject(params.id));
+      }),
     );
 
     api.delete(

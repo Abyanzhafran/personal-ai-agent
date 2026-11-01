@@ -11,6 +11,7 @@ const SHOW_MAX_BUFFER = 64 * 1024 * 1024;
 
 const ORIGIN = 'origin/';
 const ORIGIN_REFS = `refs/remotes/${ORIGIN}`;
+const TAG_REFS = 'refs/tags/';
 
 export interface TreeEntry {
   /** Mode git, mis. `100644`; `120000` symlink, `160000` submodule. */
@@ -31,6 +32,13 @@ export interface GrepMatch {
 export interface RemoteBranch {
   /** Tanpa awalan `origin/`, mis. `feature/xyz`. */
   readonly name: string;
+  readonly sha: string;
+}
+
+export interface GitTag {
+  /** Mis. `v1.2.0`. */
+  readonly name: string;
+  /** Commit yang ditunjuk; tag beranotasi dikupas ke commit-nya. */
   readonly sha: string;
 }
 
@@ -56,6 +64,8 @@ export interface GitAdapter {
   grepWord(repo: string, rev: string, word: string): Promise<GrepMatch[]>;
   /** Branch di `origin` tanpa `origin/HEAD`, urut menurut nama. */
   forEachRefRemotes(repo: string): Promise<RemoteBranch[]>;
+  /** Tag lokal (`refs/tags/`), urut menurut nama. `fetch` mengikutkan tag yang menunjuk commit yang diambil. */
+  forEachRefTags(repo: string): Promise<GitTag[]>;
   fetchPrune(repo: string): Promise<void>;
   /** Membuat worktree detached di `dir` pada `sha`. */
   worktreeAdd(repo: string, dir: string, sha: string): Promise<void>;
@@ -227,6 +237,24 @@ export function createGitAdapter(runner: CommandRunner): GitAdapter {
           return { name: refname.slice(ORIGIN_REFS.length), sha };
         })
         .filter((branch) => branch.name !== 'HEAD');
+    },
+
+    async forEachRefTags(repo) {
+      // `%(*objectname)` terisi hanya untuk tag beranotasi (objek tag), berisi commit yang dikupas.
+      const result = assertSuccess(
+        await git(repo, [
+          'for-each-ref',
+          '--format=%(objectname)%09%(*objectname)%09%(refname)',
+          TAG_REFS,
+        ]),
+      );
+      return result.stdout
+        .split('\n')
+        .filter((row) => row !== '')
+        .map((row) => {
+          const [object = '', peeled = '', refname = ''] = row.split('\t');
+          return { name: refname.slice(TAG_REFS.length), sha: peeled === '' ? object : peeled };
+        });
     },
 
     async fetchPrune(repo) {

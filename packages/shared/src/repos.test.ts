@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CreateRepoRequest, Repo, RepoIdParams, UpdateRepoRequest } from './repos.js';
+import {
+  CreateRepoRequest,
+  Repo,
+  RepoFetchResult,
+  RepoIdParams,
+  RepoRef,
+  UpdateRepoRequest,
+} from './repos.js';
 
 const messagesOf = (result: {
   success: boolean;
@@ -98,5 +105,28 @@ describe('Repo', () => {
     };
     expect(Repo.parse(row)).toEqual(row);
     expect(Repo.safeParse({ ...row, profile_status: 'scanning' }).success).toBe(false);
+  });
+});
+
+describe('RepoRef dan RepoFetchResult', () => {
+  it('RepoRef: kind hanya branch atau tag', () => {
+    const branch = { name: 'feature/xyz', kind: 'branch', sha: 'abc123' };
+    expect(RepoRef.parse(branch)).toEqual(branch);
+    expect(RepoRef.parse({ ...branch, kind: 'tag' }).kind).toBe('tag');
+    expect(RepoRef.safeParse({ ...branch, kind: 'commit' }).success).toBe(false);
+  });
+
+  it('RepoFetchResult: gagal membawa alasan, berhasil membawa waktu', () => {
+    const ok = {
+      repo_id: 1,
+      name: 'svc-order',
+      ok: true,
+      error: null,
+      last_fetch_at: '2026-11-01T10:00:00.000Z',
+    };
+    expect(RepoFetchResult.parse(ok)).toEqual(ok);
+    const failed = { ...ok, ok: false, error: 'Fetch gagal: fatal: x', last_fetch_at: null };
+    expect(RepoFetchResult.parse(failed)).toEqual(failed);
+    expect(RepoFetchResult.safeParse({ ...ok, ok: 'ya' }).success).toBe(false);
   });
 });

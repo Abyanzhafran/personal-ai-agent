@@ -3,7 +3,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ApiErrorEnvelope, Repo, ValidationDetails, type Project } from '@cc/shared';
+import {
+  ApiErrorEnvelope,
+  Repo,
+  RepoFetchResult,
+  RepoRef,
+  ValidationDetails,
+  type Project,
+} from '@cc/shared';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -76,7 +83,8 @@ beforeEach(async () => {
   db = openDatabase(':memory:');
   migrate(db);
   const git = createGitAdapter(createCommandRunner({ oasdiffBin: 'oasdiff' }));
-  const routes = [projectRoutes({ db, workspace }), repoRoutes({ db, workspace, git })];
+  const config = { gitConcurrency: 4 };
+  const routes = [projectRoutes({ db, workspace }), repoRoutes({ db, workspace, git, config })];
   app = createApp({
     logger: createLogger({ level: 'silent' }),
     registerRoutes: (api) => routes.forEach((register) => register(api)),
@@ -456,6 +464,190 @@ describe('PATCH /api/repos/:id', () => {
     expect(res.status).toBe(404);
     expect(errorOf(res.body).code).toBe('repo_not_found');
     expect((await patch('abc', {})).status).toBe(400);
+  });
+});
+
+/**
+ * Repo yang tidak terhubung ke fixture mana pun: remote bare sendiri + satu klon kerja. Dipakai test yang
+ * mengubah remote atau tag, supaya fixture bersama tetap utuh untuk test lain.
+ */
+function makeIndependentRepo(name: string) {
+  const remote = path.join(fixturesTmp, `${name}.git`);
+  const work = path.join(fixturesTmp, name);
+  rawGit(fixturesTmp, 'clone', '--quiet', '--bare', order().remote, remote);
+  rawGit(fixturesTmp, 'clone', '--quiet', remote, work);
+  return { remote, work, head: rawGit(work, 'rev-parse', 'HEAD') };
+}
+
+describe('GET /api/repos/:id/refs', () => {
+  const register = async (localPath: string, extra: Record<string, unknown> = {}) => {
+    const project = await newProject();
+    const res = await addRepo(project.id, { role: 'service', local_path: localPath, ...extra });
+    return res.body as Repo;
+  };
+  const refs = (id: number) => request(app).get(`/api/repos/${id}/refs`);
+
+  it('branch fixture cocok persis, cabang default paling atas (bukan urutan abjad)', async () => {
+    const repo = await register(order().path);
+
+    const res = await refs(repo.id);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      { name: 'main', kind: 'branch', sha: order().commits['readme'] },
+      { name: 'feature/xyz', kind: 'branch', sha: order().commits['feature-xyz'] },
+    ]);
+    expect((res.body as unknown[]).map((r) => RepoRef.parse(r))).toHaveLength(2);
+  });
+
+  it('mengikuti default_branch yang diubah lewat PATCH', async () => {
+    const repo = await register(order().path);
+    await request(app).patch(`/api/repos/${repo.id}`).send({ default_branch: 'feature/xyz' });
+
+    const names = ((await refs(repo.id)).body as { name: string }[]).map((r) => r.name);
+
+    expect(names).toEqual(['feature/xyz', 'main']);
+  });
+
+  it('tag ikut, sesudah semua branch: ringan dan beranotasi menunjuk commit', async () => {
+    const { work, head } = makeIndependentRepo('dengan-tag');
+    rawGit(work, 'tag', 'v1.0');
+    rawGit(
+      work,
+      '-c',
+      'user.name=T',
+      '-c',
+      'user.email=t@example.com',
+      'tag',
+      '-a',
+      '-m',
+      'rilis',
+      'v2.0',
+    );
+    const repo = await register(work);
+
+    const res = await refs(repo.id);
+
+    expect(res.body).toEqual([
+      { name: 'main', kind: 'branch', sha: head },
+      { name: 'feature/xyz', kind: 'branch', sha: order().commits['feature-xyz'] },
+      { name: 'v1.0', kind: 'tag', sha: head },
+      { name: 'v2.0', kind: 'tag', sha: head },
+    ]);
+  });
+
+  it('folder repo sudah dipindah → 409 repo_not_git; id tidak ada → 404; bukan angka → 400', async () => {
+    const { work } = makeIndependentRepo('akan-hilang');
+    const repo = await register(work);
+    await fs.rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+
+    const gone = await refs(repo.id);
+    expect(gone.status).toBe(409);
+    expect(errorOf(gone.body).code).toBe('repo_not_git');
+
+    const missing = await refs(9999);
+    expect(missing.status).toBe(404);
+    expect(errorOf(missing.body).code).toBe('repo_not_found');
+    expect((await request(app).get('/api/repos/abc/refs')).status).toBe(400);
+  });
+});
+
+describe('POST /api/projects/:id/fetch', () => {
+  const fetchProject = (id: number) => request(app).post(`/api/projects/${id}/fetch`);
+  const lastFetch = (id: number) =>
+    (
+      db.prepare('SELECT last_fetch_at FROM repos WHERE id = ?').get(id) as {
+        last_fetch_at: string | null;
+      }
+    ).last_fetch_at;
+
+  it('mengisi last_fetch_at tiap repo yang berhasil; working tree fixture tidak berubah', async () => {
+    const project = await newProject();
+    const a = (await addRepo(project.id, { role: 'service', local_path: order().path }))
+      .body as Repo;
+    const b = (await addRepo(project.id, { role: 'microfrontend', local_path: mfe().path }))
+      .body as Repo;
+    expect([a.last_fetch_at, b.last_fetch_at]).toEqual([null, null]);
+    const snapshots = [snapshot(order()), snapshot(mfe())];
+    const started = Date.now();
+
+    const res = await fetchProject(project.id);
+
+    expect(res.status).toBe(200);
+    const results = (res.body as unknown[]).map((r) => RepoFetchResult.parse(r));
+    expect(results.map((r) => [r.repo_id, r.name, r.ok, r.error])).toEqual([
+      [a.id, 'svc-order', true, null],
+      [b.id, 'mfe-dashboard', true, null],
+    ]);
+    for (const result of results) {
+      expect(Date.parse(result.last_fetch_at as string)).toBeGreaterThanOrEqual(started);
+      expect(lastFetch(result.repo_id)).toBe(result.last_fetch_at);
+    }
+    expect([snapshot(order()), snapshot(mfe())]).toEqual(snapshots);
+  });
+
+  it('branch baru di remote muncul, yang dihapus di remote dipangkas', async () => {
+    const { remote, work, head } = makeIndependentRepo('berubah');
+    const project = await newProject();
+    const repo = (await addRepo(project.id, { role: 'service', local_path: work })).body as Repo;
+    const names = async () =>
+      ((await request(app).get(`/api/repos/${repo.id}/refs`)).body as { name: string }[]).map(
+        (r) => r.name,
+      );
+    expect(await names()).toEqual(['main', 'feature/xyz']);
+
+    rawGit(remote, 'update-ref', 'refs/heads/baru', head);
+    rawGit(remote, 'update-ref', '-d', 'refs/heads/feature/xyz');
+    rawGit(remote, 'update-ref', 'refs/tags/v9', head);
+    expect((await fetchProject(project.id)).status).toBe(200);
+
+    expect(await names()).toEqual(['main', 'baru', 'v9']);
+  });
+
+  it('satu repo gagal tidak menggagalkan yang lain; last_fetch_at hanya terisi untuk yang berhasil', async () => {
+    const { work: broken } = makeIndependentRepo('putus');
+    const project = await newProject();
+    const bad = (await addRepo(project.id, { role: 'service', local_path: broken })).body as Repo;
+    const good = (await addRepo(project.id, { role: 'service', local_path: order().path }))
+      .body as Repo;
+    // Didaftarkan dulu (validasi lolos), baru remote-nya diputus.
+    rawGit(broken, 'remote', 'set-url', 'origin', path.join(fixturesTmp, 'remote-tidak-ada.git'));
+
+    const res = await fetchProject(project.id);
+
+    expect(res.status).toBe(200);
+    const [failed, succeeded] = (res.body as unknown[]).map((r) => RepoFetchResult.parse(r));
+    expect(failed).toMatchObject({ repo_id: bad.id, ok: false, last_fetch_at: null });
+    expect(failed?.error).toMatch(/^Fetch gagal: fatal:/);
+    expect(succeeded).toMatchObject({ repo_id: good.id, ok: true, error: null });
+    expect(lastFetch(bad.id)).toBeNull();
+    expect(lastFetch(good.id)).toBe(succeeded?.last_fetch_at);
+  });
+
+  it('repo yang gagal lagi sesudah pernah berhasil menyimpan waktu lamanya', async () => {
+    const { work } = makeIndependentRepo('sempat-baik');
+    const project = await newProject();
+    const repo = (await addRepo(project.id, { role: 'service', local_path: work })).body as Repo;
+    const first = (await fetchProject(project.id)).body[0] as RepoFetchResult;
+    expect(first.ok).toBe(true);
+
+    rawGit(work, 'remote', 'set-url', 'origin', path.join(fixturesTmp, 'remote-tidak-ada.git'));
+    const second = (await fetchProject(project.id)).body[0] as RepoFetchResult;
+
+    expect(second).toMatchObject({ ok: false, last_fetch_at: first.last_fetch_at });
+    expect(lastFetch(repo.id)).toBe(first.last_fetch_at);
+  });
+
+  it('project tanpa repo → []; project tidak ada → 404; id bukan angka → 400', async () => {
+    const project = await newProject();
+    const empty = await fetchProject(project.id);
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual([]);
+
+    const missing = await fetchProject(9999);
+    expect(missing.status).toBe(404);
+    expect(errorOf(missing.body).code).toBe('project_not_found');
+    expect((await request(app).post('/api/projects/abc/fetch')).status).toBe(400);
   });
 });
 
