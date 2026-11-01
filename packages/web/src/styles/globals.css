@@ -92,4 +92,15 @@
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
   }
+
+  /* Fokus keyboard sesuai mockup: outline primary tebal 2, offset 2. Semua komponen interaktif
+     (tombol, tab, checkbox Radix, select native, ...) adalah elemen di daftar ini. */
+  a:focus-visible,
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }

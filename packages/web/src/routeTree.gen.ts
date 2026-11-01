@@ -14,6 +14,7 @@ import { Route as PanduanRouteImport } from './routes/panduan';
 import { Route as ChecksIndexRouteImport } from './routes/checks.index';
 import { Route as ChecksCheckIdRouteImport } from './routes/checks.$checkId';
 import { Route as DevTokensRouteImport } from './routes/dev.tokens';
+import { Route as DevUiRouteImport } from './routes/dev.ui';
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId';
 import { Route as ReposRepoIdDiscoveryRouteImport } from './routes/repos.$repoId.discovery';
 
@@ -42,6 +43,11 @@ const DevTokensRoute = DevTokensRouteImport.update({
   path: '/dev/tokens',
   getParentRoute: () => rootRouteImport,
 } as any);
+const DevUiRoute = DevUiRouteImport.update({
+  id: '/dev/ui',
+  path: '/dev/ui',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   id: '/projects/$projectId',
   path: '/projects/$projectId',
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/panduan': typeof PanduanRoute;
   '/checks/$checkId': typeof ChecksCheckIdRoute;
   '/dev/tokens': typeof DevTokensRoute;
+  '/dev/ui': typeof DevUiRoute;
   '/projects/$projectId': typeof ProjectsProjectIdRoute;
   '/checks/': typeof ChecksIndexRoute;
   '/repos/$repoId/discovery': typeof ReposRepoIdDiscoveryRoute;
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/panduan': typeof PanduanRoute;
   '/checks/$checkId': typeof ChecksCheckIdRoute;
   '/dev/tokens': typeof DevTokensRoute;
+  '/dev/ui': typeof DevUiRoute;
   '/projects/$projectId': typeof ProjectsProjectIdRoute;
   '/checks': typeof ChecksIndexRoute;
   '/repos/$repoId/discovery': typeof ReposRepoIdDiscoveryRoute;
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/panduan': typeof PanduanRoute;
   '/checks/$checkId': typeof ChecksCheckIdRoute;
   '/dev/tokens': typeof DevTokensRoute;
+  '/dev/ui': typeof DevUiRoute;
   '/projects/$projectId': typeof ProjectsProjectIdRoute;
   '/checks/': typeof ChecksIndexRoute;
   '/repos/$repoId/discovery': typeof ReposRepoIdDiscoveryRoute;
@@ -88,6 +97,7 @@ export interface FileRouteTypes {
     | '/panduan'
     | '/checks/$checkId'
     | '/dev/tokens'
+    | '/dev/ui'
     | '/projects/$projectId'
     | '/checks/'
     | '/repos/$repoId/discovery';
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/panduan'
     | '/checks/$checkId'
     | '/dev/tokens'
+    | '/dev/ui'
     | '/projects/$projectId'
     | '/checks'
     | '/repos/$repoId/discovery';
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/panduan'
     | '/checks/$checkId'
     | '/dev/tokens'
+    | '/dev/ui'
     | '/projects/$projectId'
     | '/checks/'
     | '/repos/$repoId/discovery';
@@ -116,6 +128,7 @@ export interface RootRouteChildren {
   PanduanRoute: typeof PanduanRoute;
   ChecksCheckIdRoute: typeof ChecksCheckIdRoute;
   DevTokensRoute: typeof DevTokensRoute;
+  DevUiRoute: typeof DevUiRoute;
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute;
   ChecksIndexRoute: typeof ChecksIndexRoute;
   ReposRepoIdDiscoveryRoute: typeof ReposRepoIdDiscoveryRoute;
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevTokensRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/dev/ui': {
+      id: '/dev/ui';
+      path: '/dev/ui';
+      fullPath: '/dev/ui';
+      preLoaderRoute: typeof DevUiRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/projects/$projectId': {
       id: '/projects/$projectId';
       path: '/projects/$projectId';
@@ -180,6 +200,7 @@ const rootRouteChildren: RootRouteChildren = {
   PanduanRoute: PanduanRoute,
   ChecksCheckIdRoute: ChecksCheckIdRoute,
   DevTokensRoute: DevTokensRoute,
+  DevUiRoute: DevUiRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ChecksIndexRoute: ChecksIndexRoute,
   ReposRepoIdDiscoveryRoute: ReposRepoIdDiscoveryRoute,
