@@ -1,0 +1,9 @@
+[project]
+name = "svc-order"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.115.0",
+  "pydantic==2.9.2",
+  "uvicorn==0.30.6",
+]

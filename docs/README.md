@@ -45,6 +45,7 @@ npm start -w @cc/server  # http://127.0.0.1:4711
 | `npm run verify`              | lint + typecheck + test. **Wajib hijau sebelum task ditandai selesai**   |
 | `npm run format`              | `prettier --write .`                                                     |
 | `npm run generate -w @cc/web` | Membangkitkan `src/routeTree.gen.ts` (otomatis saat dev/build/typecheck) |
+| `npm run fixtures [-- <dir>]` | Membuat empat repo git fixture (default `<tmp>/contract-check-fixtures`) |
 
 ## Variabel lingkungan
 
@@ -81,6 +82,7 @@ Data aplikasi ada di `WORKSPACE_DIR`, tidak pernah di dalam repo user:
 packages/shared   skema zod + tipe (satu-satunya definisi kontrak API)
 packages/server   Express 5, SQLite, git/oasdiff, runner
 packages/web      Vite 6 + React 19 + TanStack Router/Query + Tailwind 4
+fixtures/         generator repo git untuk test (make-fixtures.ts); isi repo di fixtures/repos/
 docs/             README, RUNBOOK (CC-095), HANDOFF, OPEN-QUESTIONS
 ```
 

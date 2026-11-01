@@ -10,6 +10,8 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '.fixtures/**',
+      // isi repo fixture (CC-090) adalah data, bukan kode proyek
+      'fixtures/repos/**',
       '**/routeTree.gen.ts',
     ],
   },
