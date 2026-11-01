@@ -28,7 +28,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Textarea } from '../components/ui/textarea';
 import { TextField } from '../components/ui/text-field';
-import { toast, Toaster } from '../components/ui/toast';
+import { toast } from '../components/ui/toast';
 
 export const Route = createFileRoute('/dev/ui')({
   component: UiPage,
@@ -220,7 +220,6 @@ function UiPage() {
         <Button variant="outlined" onClick={() => toast('Fetch selesai untuk 3 repo')}>
           Tampilkan toast
         </Button>
-        <Toaster containerAriaLabel="Notifikasi" />
       </Demo>
 
       <Demo name="nav-rail" title="NavRail">

@@ -53,12 +53,12 @@ describe('navigasi', () => {
     expect(await screenRoute()).toBe('/');
     const nav = screen.getByTestId('nav');
 
-    await userEvent.click(screen.getByRole('link', { name: 'checks' }));
+    await userEvent.click(screen.getByRole('link', { name: 'Checks' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/checks'));
     expect(await screenRoute()).toBe('/checks');
     expect(screen.getByTestId('nav')).toBe(nav);
 
-    await userEvent.click(screen.getByRole('link', { name: 'panduan' }));
+    await router.navigate({ to: '/panduan' });
     expect(await screenRoute()).toBe('/panduan');
     expect(screen.getByTestId('nav')).toBe(nav);
   });
@@ -66,7 +66,7 @@ describe('navigasi', () => {
   it('klik link dicegat router (preventDefault), sehingga browser tidak memuat halaman baru', async () => {
     renderAt('/');
     await screenRoute();
-    const link = screen.getByRole('link', { name: 'checks' });
+    const link = screen.getByRole('link', { name: 'Checks' });
     // fireEvent.click mengembalikan false bila ada handler yang memanggil preventDefault().
     expect(fireEvent.click(link)).toBe(false);
   });

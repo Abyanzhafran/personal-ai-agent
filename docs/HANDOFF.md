@@ -5,11 +5,11 @@ Catatan untuk agent yang melanjutkan. Riwayat per task ada di `git log` dan kart
 ## 1. Status
 
 - **Sesi terakhir**: 2026-11-01.
-- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074 (G2). Sisa 48 task. CC-074: AC 1 (teks shell dari kamus) **belum dicentang**, hanya terbukti untuk nav sementara; centang saat CC-073 memasang breadcrumb dan header lewat `useT()`.
-- **`npm run verify`**: hijau terakhir di CC-074 (28 file, 566 test).
+- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074 (G2). Sisa 48 task. CC-073 selesai kecuali satu AC: lebar 1360/960/640 **belum dicentang** karena belum dilihat dengan mata (jsdom hanya membuktikan nama kelas). Cek lewat `npm run dev`, lalu centang.
+- **`npm run verify`**: hijau terakhir di CC-073 (29 file, 577 test).
 - **Node**: lokal v24. Node 20 belum diuji ulang sejak CC-090 (terakhir lolos 314 test di Docker, lihat bagian 7).
 - **Commit**: pemilik repo yang commit. Pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. Cek `git status -sb` untuk yang belum di-push.
-- **Backlog** (Claude Docs, rev 81): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
+- **Backlog** (Claude Docs, rev 82): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
   - Backlog: `https://claude.ai/artifact/9JhEHyYAfGbdEspd7yGmdi` (id `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299`)
   - Arsitektur: `https://claude.ai/artifact/Wi1pbDYivJM7MkPeF8ctno` (id `f0930578-8d3d-418a-81f1-589fc8622f74`)
   - Mockup v2: `https://claude.ai/artifact/WXBabwcVKiWBchD2sGfsHC` (artifact biasa, `list_files` / `read_file`)
@@ -36,7 +36,8 @@ Aturan kerja backlog (10 butir) tetap berlaku. Yang sering terlupa: tanpa panggi
 - `shared/src`: `domain.ts` (enum), `api.ts` (amplop galat, `ERROR_CODES`, `ValidationDetails`, health), `projects.ts`, `repos.ts`. Skema endpoint lain belum ada (G-2).
 - `fixtures/make-fixtures.ts` `makeFixtures(dir)` → `{root, repos}`; tiap repo `{name, role, path, remote, defaultBranch, specPath?, specCmd?, commits}` (`path` = nilai `local_path` untuk mendaftarkan repo). Test server mengimpornya dari `../../../../fixtures/make-fixtures.js` tanpa konfigurasi tambahan. Satu generasi ~2,5 dtk di Windows: bangkitkan sekali per berkas test (`beforeAll`, timeout 120 dtk). Pola `git/adapter.test.ts`: snapshot `status`/`HEAD`/branch semua repo di awal, bandingkan di `afterAll` (bukti read-only).
 - `web/src/components/ui/` (CC-072) + `/dev/ui` yang memperagakan semuanya. Gabung kelas lewat `cn()` dari `lib/cn.ts`. Test: `components/ui/ui.test.tsx`, `routes/dev.ui.test.tsx`.
-- `lib/i18n.ts` (CC-074): semua teks UI lewat `const t = useT(); t('nav.checks')`, kunci datar dari `locales/id.ts`. Bahasa baru = `const en: Messages` + satu baris di `i18n.ts`, komponen tidak berubah.
+- `lib/i18n.ts` (CC-074): semua teks UI lewat `const t = useT(); t('nav.checks')`, kunci datar dari `locales/id.ts`. Bahasa baru = `const en: Messages` + satu baris di `i18n.ts`, komponen tidak berubah. `t(key, {nama})` mengisi `{nama}`.
+- `components/app-shell.tsx` (CC-073) dipasang di `routes/__root.tsx`: nav rail, `<main>`, dan satu-satunya `<Toaster>`. `components/page-header.tsx` `PageHeader({title, subtitle?, actions?})` merender breadcrumb sendiri; layar tidak menulis breadcrumb.
 
 ## 4. Keputusan yang masih mengikat
 
@@ -68,9 +69,10 @@ Yang butuh konfirmasi arsitek ada di `docs/OPEN-QUESTIONS.md`. D-9 digabung ke D
 **Web**
 
 - **D-12 Tailwind 4 CSS-first**: token di `globals.css` blok `@theme static`; tidak ada `tailwind.config.ts` (backlog menyebutnya, itu gaya Tailwind 3). Palet bawaan dikosongkan (`--color-*: initial`), jadi `bg-red-500` dst. tidak ada.
-- **D-14** `PlaceholderScreen` dan `__root.tsx` sementara; CC-073 menggantikan root, CC-076+ layar. Halaman `/dev/*` dikecualikan dari aturan i18n.
-- **D-25 Komponen UI** (CC-072): "shadcn" dibaca sebagai pola, bukan CLI. Komponen tulis tangan dengan Radix + `class-variance-authority` + `cn()`; `twMerge` polos membuang `text-on-surface`, jadi skala `text-body/label/title/headline/code` didaftarkan di `lib/cn.ts`. Select = `<select>` native. `SeverityChip` memakai kosakata domain `@cc/shared` (`break, warn, info, clean, spec_stale, cancelled, failed`); teks lewat `children`. Fokus keyboard = **satu aturan global** di `globals.css`. "Tanpa teks" dijaga test (render kosong → `body.textContent === ''`); satu pengecualian: sonner menambah `alt+T` ke `aria-label`, jadi `Toaster` mewajibkan `containerAriaLabel`. Angka mockup hanya untuk Button, field, chip, progress, NavRail, dialog; Tabs, Checkbox, Table, Toast mengikuti pola M3 terdekat, jadi periksa saat CC-076+ memakainya. `<Toaster>` baru dipasang di `/dev/ui`; CC-073 harus memasangnya di akar.
-- **D-26 i18n** (CC-074): satu bahasa (ID), tanpa library dan tanpa provider. `t(key)` belum mendukung `{param}`; task pertama yang butuh menambah `t(key, vars?)` di `i18n.ts` (kompatibel mundur). Nav sementara di `__root.tsx` dipasang ke kamus dengan **teks tampil yang sama** (`projects`, `checks`, `panduan`) agar `router.test.tsx` tidak berubah; teks akhir milik CC-073 (mockup: `Projects`, `Checks`, `aria-label` `Navigasi utama`, tanpa tombol bahasa).
+- **D-14** `PlaceholderScreen` sementara (judulnya pola rute), CC-076+ menggantikannya. Halaman `/dev/*` dikecualikan dari aturan i18n.
+- **D-25 Komponen UI** (CC-072): "shadcn" dibaca sebagai pola, bukan CLI. Komponen tulis tangan dengan Radix + `class-variance-authority` + `cn()`; `twMerge` polos membuang `text-on-surface`, jadi skala `text-body/label/title/headline/code` didaftarkan di `lib/cn.ts`. Select = `<select>` native. `SeverityChip` memakai kosakata domain `@cc/shared` (`break, warn, info, clean, spec_stale, cancelled, failed`); teks lewat `children`. Fokus keyboard = **satu aturan global** di `globals.css`. "Tanpa teks" dijaga test (render kosong → `body.textContent === ''`); satu pengecualian: sonner menambah `alt+T` ke `aria-label`, jadi `Toaster` mewajibkan `containerAriaLabel`. Angka mockup hanya untuk Button, field, chip, progress, NavRail, dialog; Tabs, Checkbox, Table, Toast mengikuti pola M3 terdekat, jadi periksa saat CC-076+ memakainya. `<Toaster>` hanya di `AppShell`; jangan pasang lagi di halaman (toast jadi dobel).
+- **D-26 i18n** (CC-074): satu bahasa (ID), tanpa library dan tanpa provider. Kunci datar (`nav.checks`). Tidak ada aturan lint "tanpa string hardcode"; dijaga test penanda `routes/root.test.tsx` (semua teks kamus diganti `§kunci§`, sisa teks di shell harus kosong) dan review.
+- **D-27 Shell dan breadcrumb** (CC-073): breadcrumb dibaca dari `staticData.crumbs(params)` rute daun (`lib/crumbs.ts`), bukan dari URL, karena Projects ada di `/` dan tidak ada rute `/repos`. **Crumb pertama wajib bertautan dan sekaligus menentukan tujuan nav rail yang aktif**; rute tanpa `crumbs` (`/panduan`, mockup juga tanpa breadcrumb) tidak punya keduanya. Crumb terakhir = halaman saat ini (`aria-current="page"`, bukan tautan). Tujuan tautan dibatasi `CrumbTo = '/' | '/checks'`; tambah di sana bila ada induk baru. Nama project/repo di breadcrumb **belum ada** (mockup: `Projects / Order Platform / svc-inventory`); `/repos/:id/discovery` sementara `Projects / Tinjau profil repo`. Pasang nama itu di CC-076/078 setelah CC-075 (tambahkan lewat mekanisme `crumbs`). Tautan Panduan tidak ada lagi di nav (mockup: tombol di header Projects, CC-076); `/panduan` sementara hanya bisa dibuka lewat URL. Tombol bahasa sengaja tidak ada (EN ditunda).
 
 **Fixture** (CC-090)
 
@@ -91,9 +93,9 @@ G-1, G-3, G-4 sudah selesai.
 
 ## 6. Task berikutnya
 
-Tidak terblokir: **CC-016**, **CC-034**, **CC-073**, **CC-075**.
+Tidak terblokir: **CC-016**, **CC-034**, **CC-075**.
 
-- **G2** sisa: CC-073, CC-075 (app shell, klien API+SSE). Urutan yang masuk akal: CC-073, lalu CC-075.
+- **G2** sisa: CC-075 (klien API+SSE) dan satu AC CC-073 (lihat bagian 1).
 - **G3**: CC-016–020 dan layar CC-076–078. Seterusnya ikuti tabel "Urutan eksekusi" di backlog.
 - Pertanyaan terbuka untuk pemilik (lockfile FastAPI, `spec_cmd` kantor, versi `oasdiff`, model dan batas biaya) belum dijawab. Tidak memblokir sampai CC-031 / CC-034 / CC-041; sebelum mengerjakan ketiganya, tanyakan dulu, jangan menebak (aturan kerja #9).
 
@@ -119,7 +121,7 @@ Tidak terblokir: **CC-016**, **CC-034**, **CC-073**, **CC-075**.
 
 Hanya `attrs.checked` pada `listItem` yang diubah; teks tidak boleh disentuh.
 
-1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":81}` untuk melihat apakah ada yang mengubah dokumen.
+1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":82}` untuk melihat apakah ada yang mengubah dokumen.
 2. **Jangan `view` seluruh tab**: di rev 79 (307 blok) panggilan itu time-out 300 dtk. Cari kartu dengan `{"kind":"search","text":"CC-0xx"}`, lalu `{"kind":"search","text":"dep: CC-0yy"}` untuk paragraf estimasi; daftar AC adalah `list kind=check` tepat setelah paragraf deskripsi, baca dengan `{"kind":"view","parentId":"<id list>"}`. Id `listItem` berbentuk `mmz53254xvt.<angka>`.
 3. `update` (`engine: "prose"`, `container: {"kind":"project","id":"43418ba4-..."}`) dengan `payload.ops` berisi `{"op":"set","target":{"kind":"blocks","ids":["mmz53254xvt.8804"]},"attrs":{"checked":true}}`; banyak op dalam satu panggilan boleh.
 4. Daftar "Tahap 1 disebut selesai bila ..." di akhir Doc dan bagian "Yang masih perlu jawaban Anda" **belum disentuh**.

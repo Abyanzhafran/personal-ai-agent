@@ -1,3 +1,5 @@
+import { PageHeader } from './page-header';
+
 interface PlaceholderScreenProps {
   /** Pola rute, mis. `/projects/$projectId`. Identifier teknis, bukan teks UI. */
   route: string;
@@ -11,6 +13,7 @@ interface PlaceholderScreenProps {
 export function PlaceholderScreen({ route, params }: PlaceholderScreenProps) {
   return (
     <section data-testid="screen" data-route={route}>
+      <PageHeader title={route} />
       <pre>
         {route}
         {params ? ` ${JSON.stringify(params)}` : ''}
