@@ -3,3 +3,4 @@ export const APP_NAME = 'Contract Check';
 
 export * from './api.js';
 export * from './domain.js';
+export * from './projects.js';

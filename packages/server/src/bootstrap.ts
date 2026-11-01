@@ -6,6 +6,7 @@ import { migrate } from './db/migrate.js';
 import { createApp, type AppDeps } from './http/app.js';
 import type { Logger } from './logger.js';
 import { createCommandRunner, type CommandRunner } from './proc/run-command.js';
+import { projectRoutes } from './projects/routes.js';
 import { WorkspaceLayout } from './workspace/layout.js';
 import { WorkspaceStore } from './workspace/store.js';
 
@@ -55,6 +56,7 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
   const app = createApp({
     logger,
     ...(options.webDist === undefined ? {} : { webDist: options.webDist }),
+    registerRoutes: projectRoutes(context),
   });
 
   let server: Server;

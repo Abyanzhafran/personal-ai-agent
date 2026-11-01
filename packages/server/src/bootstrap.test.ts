@@ -63,6 +63,23 @@ describe('startApp', () => {
     expect(app.context.db.prepare('SELECT COUNT(*) AS n FROM projects').get()).toEqual({ n: 1 });
   });
 
+  it('memasang rute /api/projects pada server sungguhan, datanya bertahan setelah restart', async () => {
+    app = await startApp(config(), { logger: silent() });
+    const created = await fetch(`http://127.0.0.1:${app.port}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Order Service' }),
+    });
+    expect(created.status).toBe(201);
+    await app.close();
+
+    app = await startApp(config(), { logger: silent() });
+    const list = await fetch(`http://127.0.0.1:${app.port}/api/projects`);
+    expect(await list.json()).toEqual([
+      { id: 1, name: 'Order Service', slug: 'order-service', description: null },
+    ]);
+  });
+
   it('port yang sudah dipakai -> EADDRINUSE', async () => {
     app = await startApp(config(), { logger: silent() });
     const second = startApp(config({ port: app.port, workspaceDir: path.join(tmp, 'ws2') }), {

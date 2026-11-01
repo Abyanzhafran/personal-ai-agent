@@ -16,6 +16,9 @@ export const ERROR_CODES = {
   forbidden_origin: 'forbidden_origin',
   web_not_built: 'web_not_built',
   internal_error: 'internal_error',
+  project_not_found: 'project_not_found',
+  /** Nama menghasilkan slug yang sudah dipakai project lain. `details`: `{ slug }`. */
+  project_slug_taken: 'project_slug_taken',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */
