@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ApiErrorEnvelope, ValidationDetails, type Project } from '@cc/shared';
+import { ApiErrorEnvelope, ProjectDetail, ValidationDetails, type Project } from '@cc/shared';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -164,7 +164,12 @@ describe('GET /api/projects', () => {
 
   it('GET /:id mengembalikan satu project; id tidak ada → 404; id bukan angka → 400', async () => {
     const { body } = await create({ name: 'Order' });
-    expect((await request(app).get(`/api/projects/${body.id}`)).body).toEqual(body);
+    const found = await request(app).get(`/api/projects/${body.id}`);
+    expect(ProjectDetail.parse(found.body)).toEqual({
+      ...body,
+      ready_for_check: false,
+      not_ready_reason: 'Tambahkan minimal satu repo service.',
+    });
 
     const missing = await request(app).get('/api/projects/999');
     expect(missing.status).toBe(404);
@@ -174,6 +179,71 @@ describe('GET /api/projects', () => {
     expect(bad.status).toBe(400);
     expect(ValidationDetails.parse(errorOf(bad.body).details).fields).toEqual([
       { in: 'params', path: 'id', message: 'Id project tidak valid' },
+    ]);
+  });
+});
+
+describe('GET /api/projects/:id: siap check', () => {
+  const addRepo = (projectId: number, role: string, name: string) =>
+    db
+      .prepare(
+        `INSERT INTO repos (project_id, role, name, local_path, default_branch)
+         VALUES (?, ?, ?, ?, 'main')`,
+      )
+      .run(projectId, role, name, `/repo/${projectId}/${name}`);
+
+  const readiness = async (projectId: number) => {
+    const res = await request(app).get(`/api/projects/${projectId}`);
+    const { ready_for_check, not_ready_reason } = ProjectDetail.parse(res.body);
+    return { ready_for_check, not_ready_reason };
+  };
+
+  it('berubah dari belum siap menjadi siap seiring repo bertambah; e2e tidak dihitung', async () => {
+    const { body } = await create({ name: 'Order' });
+    expect(await readiness(body.id)).toEqual({
+      ready_for_check: false,
+      not_ready_reason: 'Tambahkan minimal satu repo service.',
+    });
+
+    addRepo(body.id, 'service', 'svc-order');
+    addRepo(body.id, 'e2e', 'e2e-suite');
+    expect(await readiness(body.id)).toEqual({
+      ready_for_check: false,
+      not_ready_reason:
+        'Tambahkan satu repo service atau microfrontend lain. Repo e2e tidak dihitung.',
+    });
+
+    addRepo(body.id, 'microfrontend', 'mfe-dashboard');
+    expect(await readiness(body.id)).toEqual({ ready_for_check: true, not_ready_reason: null });
+  });
+
+  it('hanya menghitung repo milik project itu', async () => {
+    const a = (await create({ name: 'A' })).body as Project;
+    const b = (await create({ name: 'B' })).body as Project;
+    addRepo(a.id, 'service', 'satu');
+    addRepo(a.id, 'service', 'dua');
+    addRepo(b.id, 'service', 'satu');
+
+    expect((await readiness(a.id)).ready_for_check).toBe(true);
+    expect((await readiness(b.id)).ready_for_check).toBe(false);
+  });
+
+  it('POST dan PATCH tetap mengembalikan project tanpa field kesiapan', async () => {
+    const created = await create({ name: 'Order' });
+    expect(Object.keys(created.body as object).sort()).toEqual([
+      'description',
+      'id',
+      'name',
+      'slug',
+    ]);
+    const patched = await request(app)
+      .patch(`/api/projects/${created.body.id}`)
+      .send({ name: 'X' });
+    expect(Object.keys(patched.body as object).sort()).toEqual([
+      'description',
+      'id',
+      'name',
+      'slug',
     ]);
   });
 });

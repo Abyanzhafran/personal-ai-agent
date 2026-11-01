@@ -3,6 +3,7 @@ import {
   ERROR_CODES,
   ProjectIdParams,
   UpdateProjectRequest,
+  type ProjectDetail,
   type ValidationDetails,
 } from '@cc/shared';
 import type { Router } from 'express';
@@ -10,6 +11,7 @@ import type { Db } from '../db/database.js';
 import { HttpError } from '../http/errors.js';
 import { validated } from '../http/validate.js';
 import type { WorkspaceStore } from '../workspace/store.js';
+import { projectReadiness } from './readiness.js';
 import { createProjectRepository } from './repository.js';
 import { slugify } from './slug.js';
 
@@ -69,7 +71,11 @@ export function projectRoutes({ db, workspace }: ProjectRouteDeps): (api: Router
       validated({ params: ProjectIdParams }, ({ params }, _req, res) => {
         const project = projects.get(params.id);
         if (!project) throw projectNotFound();
-        res.json(project);
+        const detail: ProjectDetail = {
+          ...project,
+          ...projectReadiness(projects.repoRoles(project.id)),
+        };
+        res.json(detail);
       }),
     );
 

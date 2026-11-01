@@ -1,4 +1,4 @@
-import type { Project } from '@cc/shared';
+import type { Project, Role } from '@cc/shared';
 import type { Db } from '../db/database.js';
 
 const COLUMNS = 'id, name, slug, description';
@@ -14,6 +14,7 @@ export function createProjectRepository(db: Db) {
   );
   const remove = db.prepare('DELETE FROM projects WHERE id = ?');
   const selectCheckIds = db.prepare('SELECT id FROM checks WHERE project_id = ?');
+  const selectRepoRoles = db.prepare('SELECT role FROM repos WHERE project_id = ?');
 
   function get(id: number): Project | undefined {
     return selectOne.get(id) as Project | undefined;
@@ -40,6 +41,10 @@ export function createProjectRepository(db: Db) {
       update.run({ id, ...input });
       return get(id);
     },
+
+    /** Peran tiap repo project, untuk aturan siap check. */
+    repoRoles: (projectId: number): Role[] =>
+      (selectRepoRoles.all(projectId) as { role: Role }[]).map((row) => row.role),
 
     /** Id semua check milik project, untuk menghapus `runs/checks/<id>/`. */
     checkIds: (projectId: number): number[] =>

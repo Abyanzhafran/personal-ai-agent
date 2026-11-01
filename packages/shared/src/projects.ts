@@ -29,6 +29,18 @@ export const Project = z.object({
 });
 export type Project = z.infer<typeof Project>;
 
+/**
+ * Respons `GET /api/projects/:id` (CC-014): project plus aturan siap check. Hanya endpoint ini yang
+ * menghitungnya; POST dan PATCH tetap mengembalikan {@link Project}.
+ */
+export const ProjectDetail = Project.extend({
+  /** Minimal satu repo service dan satu repo service atau microfrontend lain; repo e2e tidak dihitung. */
+  ready_for_check: z.boolean(),
+  /** Kalimat siap tampil di dekat tombol Jalankan check yang nonaktif; null bila sudah siap. */
+  not_ready_reason: z.string().nullable(),
+});
+export type ProjectDetail = z.infer<typeof ProjectDetail>;
+
 export const CreateProjectRequest = z.object(
   { name: ProjectName, description: ProjectDescription.optional() },
   { error: 'Body harus berupa objek JSON' },
