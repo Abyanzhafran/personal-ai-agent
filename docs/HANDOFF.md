@@ -4,12 +4,12 @@ Catatan untuk agent yang melanjutkan. Riwayat per task ada di `git log` dan kart
 
 ## 1. Status
 
-- **Sesi terakhir**: 2026-11-01.
-- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074, 075 (G2); CC-016–020 (G3 backend); CC-030, CC-034 (G4; CC-034 kecuali AC1 dan AC4, lihat D-35). Sisa 40 task. CC-073 selesai kecuali satu AC: lebar 1360/960/640 **belum dicentang** karena belum dilihat dengan mata (jsdom hanya membuktikan nama kelas). Cek lewat `npm run dev`, lalu centang.
-- **`npm run verify`**: hijau terakhir di CC-034 (39 file, 711 test), dijalankan sekali di akhir rangkaian CC-019–034.
+- **Sesi terakhir**: 2026-11-02.
+- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074, 075 (G2); CC-016–020 (G3 backend); CC-030, 034, 035, 037, 038 (G4; AC yang sengaja kosong: D-35–D-38); CC-040 (G5). Sisa 36 task. CC-073 selesai kecuali satu AC: lebar 1360/960/640 **belum dicentang** karena belum dilihat dengan mata (jsdom hanya membuktikan nama kelas). Cek lewat `npm run dev`, lalu centang.
+- **`npm run verify`**: hijau terakhir di CC-040 (43 file, 774 test), dijalankan sekali di akhir rangkaian CC-035–040.
 - **Node**: lokal v24. Node 20 belum diuji ulang sejak CC-090 (terakhir lolos 314 test di Docker, lihat bagian 7).
 - **Commit**: pemilik repo yang commit. Pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. Cek `git status -sb` untuk yang belum di-push.
-- **Backlog** (Claude Docs, rev 90): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
+- **Backlog** (Claude Docs, rev 94): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
   - Backlog: `https://claude.ai/artifact/9JhEHyYAfGbdEspd7yGmdi` (id `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299`)
   - Arsitektur: `https://claude.ai/artifact/Wi1pbDYivJM7MkPeF8ctno` (id `f0930578-8d3d-418a-81f1-589fc8622f74`)
   - Mockup v2: `https://claude.ai/artifact/WXBabwcVKiWBchD2sGfsHC` (artifact biasa, `list_files` / `read_file`)
@@ -37,6 +37,7 @@ Aturan kerja backlog (10 butir) tetap berlaku. Yang sering terlupa: tanpa panggi
 - `llm/discovery.prompt.ts` (CC-018): `DiscoveryOutput` (zod), `buildDiscoveryPrompt(input)`, `DISCOVERY_PROMPT_VERSION`. `repos/discovery.ts` (CC-019) `createDiscoveryRunner(...)` → `{isRunning, start(repo), profile(repo), approve(repo, input), stop()}` merangkai collector → prompt → `callJson` → draf; rute ada di `repos/routes.ts`.
 - `spec/resolve.ts` (CC-030) `resolveCommittedSpec(git, {repo, sha, specPath})` → `{document, source: 'committed', sha, path}`; galat bertipe di `spec/errors.ts`.
 - `diff/oasdiff.ts` (CC-034) `createOasdiff({runner, bin})` → `{capability(), assertAvailable(), changelog({base, head, signal?})}`; `AppContext.oasdiff`. `startApp` memulai cek binary tanpa menunggunya (tidak menunda `listen`) dan hanya mencatat log.
+- Fungsi murni G4/G5, belum dipanggil pipeline (CC-060): `diff/endpoints.ts` `buildEndpoints(changes, {baseSpec})` → `ChangedEndpoint[]` (CC-035); `consumers/grep.ts` `createConsumerGrep({git, concurrency}).search({endpoints, repos, provider})` (CC-037); `consumers/limit.ts` `limitCandidates(endpoints, max)` → `{files, skipped_files, incomplete}` (CC-038); `llm/extraction.prompt.ts` `ExtractionOutput`, `buildExtractionPrompt`, `EXTRACTION_PROMPT_VERSION` (CC-040).
 - `workspace/layout.ts` hanya menghitung path (selalu di dalam root); `workspace/store.ts` melakukan I/O (tulis atomic, baca cache, hapus data project/repo).
 - `shared/src`: `domain.ts` (enum), `api.ts` (amplop galat, `ERROR_CODES`, `ValidationDetails`, health), `projects.ts`, `repos.ts`. Skema endpoint lain belum ada (G-2).
 - `fixtures/make-fixtures.ts` `makeFixtures(dir)` → `{root, repos}`; tiap repo `{name, role, path, remote, defaultBranch, specPath?, specCmd?, commits}` (`path` = nilai `local_path` untuk mendaftarkan repo). Test server mengimpornya dari `../../../../fixtures/make-fixtures.js` tanpa konfigurasi tambahan. Satu generasi ~2,5 dtk di Windows: bangkitkan sekali per berkas test (`beforeAll`, timeout 120 dtk). Pola `git/adapter.test.ts`: snapshot `status`/`HEAD`/branch semua repo di awal, bandingkan di `afterAll` (bukti read-only).
@@ -77,6 +78,10 @@ Yang butuh konfirmasi arsitek ada di `docs/OPEN-QUESTIONS.md`. D-9 digabung ke D
 - **D-33 Setujui profil** (CC-020), pilihan pemilik: `PUT /api/repos/:id/profile` `{profile_md, apply_spec_path, spec_cmd?}` membalas `RepoProfileResponse`. `.md` = `profile_md` persis (tanpa trim); `.json` = draf dengan `profile_md`, `spec_cmd`, `spec_path` diganti nilai yang disetujui (`handler_dirs`/`http_client`/`base_url_pattern` tetap dari draf); DB ditulis terakhir. `apply_spec_path` true menyalin `spec_path` draf (draf null → `repos.spec_path` tidak diubah); `spec_cmd` tidak dikirim = tidak berubah, kosong = `null`. 409: tanpa draf (`profile_not_ready`, termasuk draf lama setelah pindai ulang gagal), sedang dipindai, atau e2e.
 - **D-34 Spec ter-commit** (CC-030), pilihan pemilik: dependensi baru `yaml` ^2 di `server`. `.json` (tanpa membedakan huruf besar-kecil) dibaca `JSON.parse`, selain itu `yaml` (yang juga menerima JSON); BOM dibuang. Nama galat persis kartu: `SpecMissing` dan `SpecParseError` (tanpa akhiran Error untuk yang pertama; tidak sama dengan gaya galat lain). Akar dokumen bukan objek (kosong, teks, array) = `SpecParseError`. Galat git lain (sha tidak dikenal) merambat apa adanya.
 - **D-35 Runner oasdiff** (CC-034): `OASDIFF_MIN_VERSION` = `1.11.0` (angka README; pemilik belum menjawab `oasdiff --version`, pertanyaan tetap terbuka). Bentuk JSON diverifikasi dari **sumber** oasdiff (`formatters/changes.go`, `checker/rules/level.go`), bukan dari proses sungguhan (belum terpasang di mesin ini): array objek, `level` angka INFO=1 / WARN=2 / ERR=3, `[]` bila kosong (versi lama mencetak kosong, juga diterima). `level` diubah menjadi `info|warn|error`; pemetaan ke `Severity` (`break|warn|info`) urusan CC-035. Cek kapabilitas di-cache per proses dan tidak pernah melempar; start hanya mencatat log. **AC1 dan AC4 sengaja belum dicentang**: CC-060 wajib memanggil `oasdiff.assertAvailable()` saat membuat check (menolaknya dengan pesan itu), dan CC-049/060 menyimpan `capability().version` ke `summary_json.tool_versions`; centang keduanya di sana.
+- **D-36 Daftar endpoint** (CC-035), pilihan pemilik: `normalized_path` = `{param}` → `{}` dan slash akhir dibuang. `operationId` dari spec base dulu, lalu field changelog, selain itu `null`. `max_level` memakai `Severity` (oasdiff `error` → `break`). Perubahan tanpa `path`/`operation` (komponen bersama) dilewati. **AC1 sengaja kosong**: golden memakai changelog buatan tangan (oasdiff belum terpasang) dan tidak membuktikan "5 breaking di 3 endpoint" (G-6); centang setelah dijalankan dengan oasdiff asli.
+- **D-37 Hop 1** (CC-037), pilihan pemilik: pola `-F` = `/` + segmen statis terpanjang (seri → yang pertama, jadi `/orders/{id}/cancel` → `/orders`) dan `operationId`. grep dan `lsTree` memakai SHA `origin/<default>` hasil `revParse`; `blob_sha` dari `lsTree`, bukan `rev-parse <ref>:<path>` (`revParse` adapter selalu menambah `^{commit}`). Galat git merambat (consumer yang dilewati diam-diam terbaca "tanpa consumer"). **AC1 sengaja kosong**: fixture asli memberi 5 berkas untuk `/orders` (4 mfe-dashboard, 1 svc-payment), bukan 3 (G-5).
+- **D-38 Batas file** (CC-038), pilihan pemilik: unit = berkas unik `(repo, path)`, `match_count` dijumlah antar endpoint; urut `match_count` turun, lalu nama repo, lalu path. Daftar endpoint tidak diubah (kandidat terlewati tidak menjadi "tanpa consumer"). **AC1 dan AC3 sengaja kosong**: CC-049 menyimpan `incomplete`/`skipped_files` ke `summary_json`, CC-061 mengirim jumlahnya di event langkah 2.
+- **D-39 Prompt ekstraksi** (CC-040), pilihan pemilik: seperti D-31, teks prompt ada di `llm/extraction.prompt.ts` dan versinya hash 12 hex dari teks itu (bukan berkas terpisah, walau AC4 menyebut "file"). Keluaran `{calls: [...]}`; `line` bilangan bulat positif; `body_fields[].literal` = teks nilai atau `null`, `type` = `string|number|integer|boolean|object|array` atau `null` (string kosong ditolak). `MAX_EXTRACT_FILE_CHARS` = 20.000, dipotong di batas baris (satu baris yang melewati batas = tidak ada isi terkirim); `truncated`/`total_lines`/`sent_lines` ada di hasil builder dan baris penanda di prompt, **CC-041 wajib menyimpan `truncated` bersama hasil cache**. Belum pernah dicoba ke model sungguhan (seperti D-31).
 
 **Web**
 
@@ -108,7 +113,7 @@ G-1, G-3, G-4 sudah selesai.
 
 ## 6. Task berikutnya
 
-Tidak terblokir: **CC-035** (butuh `changelog` dari CC-034), **CC-076**, **CC-040**. Masih menunggu pemilik: CC-033 (apakah `oasdiff` terpasang menerima Swagger 2; butuh versi `oasdiff` laptop), CC-031/032 (`spec_cmd` dan lockfile kantor).
+Tidak terblokir: **CC-041** (dep CC-040, CC-038; sentuh pertanyaan model dan batas biaya), **CC-076**. Masih menunggu pemilik: CC-033 (apakah `oasdiff` terpasang menerima Swagger 2; butuh versi `oasdiff` laptop), CC-031/032 (`spec_cmd` dan lockfile kantor); CC-036 ikut tertahan karena bergantung pada CC-031.
 
 - **G2** sisa: satu AC CC-073 (lihat bagian 1).
 - **G3**: layar CC-076–078 (lihat G-9 sebelum CC-076). Seterusnya ikuti tabel "Urutan eksekusi" di backlog.
@@ -137,7 +142,7 @@ Tidak terblokir: **CC-035** (butuh `changelog` dari CC-034), **CC-076**, **CC-04
 
 Hanya `attrs.checked` pada `listItem` yang diubah; teks tidak boleh disentuh.
 
-1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":82}` untuk melihat apakah ada yang mengubah dokumen.
+1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":94}` untuk melihat apakah ada yang mengubah dokumen.
 2. **Jangan `view` seluruh tab**: di rev 79 (307 blok) panggilan itu time-out 300 dtk. Cari kartu dengan `{"kind":"search","text":"CC-0xx"}`, lalu `{"kind":"search","text":"dep: CC-0yy"}` untuk paragraf estimasi; daftar AC adalah `list kind=check` tepat setelah paragraf deskripsi, baca dengan `{"kind":"view","parentId":"<id list>"}`. Id `listItem` berbentuk `mmz53254xvt.<angka>`.
 3. `update` (`engine: "prose"`, `container: {"kind":"project","id":"43418ba4-..."}`) dengan `payload.ops` berisi `{"op":"set","target":{"kind":"blocks","ids":["mmz53254xvt.8804"]},"attrs":{"checked":true}}`; banyak op dalam satu panggilan boleh.
 4. Daftar "Tahap 1 disebut selesai bila ..." di akhir Doc dan bagian "Yang masih perlu jawaban Anda" **belum disentuh**.
