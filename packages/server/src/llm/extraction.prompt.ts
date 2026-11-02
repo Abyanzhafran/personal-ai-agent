@@ -97,13 +97,19 @@ export interface ExtractionPrompt {
   readonly sent_lines: number;
 }
 
+/** Baris berkas seperti yang dinomori prompt; newline akhir bukan baris tambahan. */
+export function splitLines(content: string): string[] {
+  const lines = content.split(/\r?\n/);
+  if (lines.at(-1) === '') lines.pop();
+  return lines;
+}
+
 /**
  * Menomori baris dan memotong di batas baris: baris yang tidak muat seluruhnya ikut dibuang.
  * Satu baris yang sendirian melewati batas (mis. bundel minified) berarti tidak ada yang terkirim.
  */
 function numberLines(content: string) {
-  const lines = content.split(/\r?\n/);
-  if (lines.at(-1) === '') lines.pop(); // newline akhir bukan baris tambahan
+  const lines = splitLines(content);
 
   let size = 0;
   let sent = 0;
