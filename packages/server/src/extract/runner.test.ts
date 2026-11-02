@@ -65,7 +65,9 @@ function setup(
   } = {},
 ) {
   const { model = 'm1', maxCalls = 40, concurrency = 4 } = options;
-  const callJson = vi.fn(options.reply ?? (() => Promise.resolve({ calls: [call()] })));
+  const reply: (input: CallInput) => Promise<unknown> =
+    options.reply ?? (() => Promise.resolve({ calls: [call()] }));
+  const callJson = vi.fn(reply);
   const runner = createExtractionRunner({
     llm: { callJson: callJson as unknown as LlmClient['callJson'] },
     workspace,
@@ -123,11 +125,33 @@ describe('cache (CC-041 AC1, AC4)', () => {
     expect(other.callJson).toHaveBeenCalledTimes(1);
   });
 
-  it('versi cache bergantung pada prompt dan model, dan aman sebagai nama berkas', () => {
-    expect(extractionCacheVersion('m', 'a')).not.toBe(extractionCacheVersion('m', 'b'));
-    expect(extractionCacheVersion('m1', 'a')).not.toBe(extractionCacheVersion('m2', 'a'));
-    expect(extractionCacheVersion('m', 'a')).toBe(extractionCacheVersion('m', 'a'));
-    expect(extractionCacheVersion('us.anthropic/claude:0')).toMatch(/^[0-9a-f]{12}$/);
+  it('versi cache bergantung pada prompt, model, dan konteks, dan aman sebagai nama berkas', () => {
+    const version = extractionCacheVersion;
+    expect(version('m', { promptVersion: 'a' })).not.toBe(version('m', { promptVersion: 'b' }));
+    expect(version('m1', { promptVersion: 'a' })).not.toBe(version('m2', { promptVersion: 'a' }));
+    expect(version('m', { promptVersion: 'a' })).toBe(version('m', { promptVersion: 'a' }));
+    expect(version('m', { context: ['x calls GET /a'] })).not.toBe(version('m'));
+    expect(version('m', { context: [] })).toBe(version('m'));
+    expect(version('us.anthropic/claude:0')).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  it('konteks hop 2 ikut kunci: blob yang sama dengan konteks lain diekstrak ulang (CC-043)', async () => {
+    const { callJson, run } = setup();
+    const withContext = (context: string[]) => file(1, { context });
+    await run([file(1)]);
+
+    expect(statuses(await run([withContext(['useOrders calls GET /orders'])], {}, 2))).toEqual([
+      'ok:llm',
+    ]);
+    expect(statuses(await run([withContext(['useOrders calls GET /orders'])], {}, 3))).toEqual([
+      'ok:cache',
+    ]);
+    expect(statuses(await run([withContext(['useOrder calls GET /orders/{id}'])], {}, 4))).toEqual([
+      'ok:llm',
+    ]);
+    expect(statuses(await run([file(1)], {}, 5))).toEqual(['ok:cache']);
+    expect(callJson).toHaveBeenCalledTimes(3);
+    expect(callJson.mock.calls[1]?.[0].prompt.user).toContain('- useOrders calls GET /orders');
   });
 
   it('path tidak ikut kunci: blob yang sama di path lain memakai cache dan file ditimpa path barunya', async () => {

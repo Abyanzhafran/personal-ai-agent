@@ -1,8 +1,8 @@
-import type { ConsumerCandidate, EndpointCandidates } from './grep.js';
+import type { ConsumerCandidate } from './grep.js';
 
-export interface LimitedCandidates {
+export interface LimitedCandidates<C extends ConsumerCandidate = ConsumerCandidate> {
   /** Berkas unik yang diekstrak, terbanyak cocok dulu. `match_count` = jumlah di semua endpoint. */
-  readonly files: readonly ConsumerCandidate[];
+  readonly files: readonly C[];
   readonly skipped_files: number;
   /** True bila ada berkas yang dilewati (laporan tidak lengkap). */
   readonly incomplete: boolean;
@@ -15,11 +15,11 @@ const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
  * sekali. Urutan: `match_count` terbanyak, seri → nama repo lalu path. `endpoints` tidak diubah:
  * endpoint yang kandidatnya terlewati tetap punya kandidat, jadi tidak terbaca "tanpa consumer".
  */
-export function limitCandidates(
-  endpoints: readonly EndpointCandidates[],
+export function limitCandidates<C extends ConsumerCandidate>(
+  endpoints: readonly { readonly candidates: readonly C[] }[],
   max: number,
-): LimitedCandidates {
-  const unique = new Map<string, ConsumerCandidate>();
+): LimitedCandidates<C> {
+  const unique = new Map<string, C>();
   for (const { candidates } of endpoints) {
     for (const candidate of candidates) {
       const key = `${candidate.repo}\0${candidate.path}`;

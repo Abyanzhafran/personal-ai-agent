@@ -24,6 +24,8 @@ export interface ExtractionFile {
   readonly blob_sha: string;
   /** Profil discovery yang disetujui untuk repo itu. */
   readonly profile: string;
+  /** Hop 2 (CC-043): fakta pembungkus untuk prompt. Hasilnya bergantung padanya, jadi ikut kunci cache. */
+  readonly context?: readonly string[];
 }
 
 export type FileExtraction = Pick<ExtractionFile, 'repoId' | 'path' | 'blob_sha'> &
@@ -57,14 +59,23 @@ export interface ExtractionRunInput {
 }
 
 /**
- * Bagian `<pv>` nama berkas cache: prompt atau model berubah = nama lain = cache lama tidak
- * terbaca. Hex 12 karakter, jadi aman sebagai nama berkas (D-6) walau nama model memuat `:` atau `/`.
+ * Bagian `<pv>` nama berkas cache: prompt, model, atau konteks berubah = nama lain = cache lama tidak
+ * terbaca. Tanpa konteks (hop 1) hash-nya sama dengan sebelum ada hop 2. Hex 12 karakter, jadi aman
+ * sebagai nama berkas (D-6) walau nama model memuat `:` atau `/`.
  */
 export function extractionCacheVersion(
   model: string,
-  promptVersion: string = EXTRACTION_PROMPT_VERSION,
+  { context = [], promptVersion = EXTRACTION_PROMPT_VERSION }: ExtractionCacheOptions = {},
 ): string {
-  return createHash('sha256').update(`${promptVersion}\n${model}`).digest('hex').slice(0, 12);
+  return createHash('sha256')
+    .update([promptVersion, model, ...context].join('\n'))
+    .digest('hex')
+    .slice(0, 12);
+}
+
+interface ExtractionCacheOptions {
+  readonly context?: readonly string[];
+  readonly promptVersion?: string;
 }
 
 /**
@@ -79,7 +90,6 @@ function atPath(extraction: Extraction, path: string): Extraction {
 export function createExtractionRunner(deps: ExtractionRunnerDeps) {
   const { llm, workspace, concurrency, maxCalls } = deps;
   const { layout } = workspace;
-  const cacheVersion = extractionCacheVersion(deps.model);
 
   /**
    * Mengekstrak semua berkas; tidak melempar karena satu berkas gagal (ditandai `failed`).
@@ -94,7 +104,11 @@ export function createExtractionRunner(deps: ExtractionRunnerDeps) {
       const id = { repoId: file.repoId, path: file.path, blob_sha: file.blob_sha };
       try {
         signal?.throwIfAborted();
-        const cacheFile = layout.extractCacheFile(file.repoId, file.blob_sha, cacheVersion);
+        const cacheFile = layout.extractCacheFile(
+          file.repoId,
+          file.blob_sha,
+          extractionCacheVersion(deps.model, { context: file.context }),
+        );
 
         let source: 'cache' | 'llm' = 'cache';
         let extraction = await workspace.readCache(cacheFile, (data) => Extraction.parse(data));
@@ -108,6 +122,7 @@ export function createExtractionRunner(deps: ExtractionRunnerDeps) {
             content: await input.readContent(file),
             profile: file.profile,
             endpoints: input.endpoints,
+            context: file.context,
           });
           const output = await llm.callJson({
             prompt: built.prompt,
