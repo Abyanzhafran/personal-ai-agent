@@ -21,7 +21,7 @@ export interface ConsumerRepo {
 export interface ConsumerCandidate {
   readonly repo: string;
   readonly path: string;
-  /** Dari pohon git commit yang di-grep, bukan dari berkas lokal. */
+  /** Dari pohon git pada SHA yang di-grep, bukan dari berkas lokal. */
   readonly blob_sha: string;
   /** Jumlah baris yang cocok di berkas itu. */
   readonly match_count: number;
@@ -35,7 +35,7 @@ export interface EndpointCandidates {
 
 export interface ConsumerSearch {
   readonly endpoints: readonly EndpointCandidates[];
-  /** Commit `origin/<default>` tiap consumer yang di-grep (kunci: nama repo), bahan laporan. */
+  /** SHA `origin/<default>` tiap consumer yang di-grep (kunci: nama repo), bahan laporan. */
   readonly consumer_shas: Readonly<Record<string, string>>;
 }
 
