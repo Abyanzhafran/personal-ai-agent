@@ -51,17 +51,18 @@ npm start -w @cc/server  # http://127.0.0.1:4711
 
 Dibaca dari `.env` di **root repo** (tidak di-commit), lalu ditimpa variabel proses. Semua divalidasi `packages/server/src/config.ts`; proses berhenti dengan pesan yang menyebut nama variabel bila ada yang salah. Contoh lengkap: `.env.example`.
 
-| Variabel              | Default             | Keterangan                                                                                                                                |
-| --------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`   | — (opsional)        | Divalidasi saat panggilan Claude pertama, bukan saat start. Tidak pernah dicetak ke log atau pesan error, tidak diwariskan ke proses anak |
-| `ANTHROPIC_MODEL`     | — (wajib)           | Nama model untuk discovery dan ekstraksi                                                                                                  |
-| `PORT`                | `4711`              | Host selalu `127.0.0.1`; tidak ada variabel untuk mengubahnya                                                                             |
-| `WORKSPACE_DIR`       | `~/.contract-check` | Harus absolut atau diawali `~`                                                                                                            |
-| `MAX_FILES_PER_CHECK` | `40`                |                                                                                                                                           |
-| `GIT_CONCURRENCY`     | `4`                 |                                                                                                                                           |
-| `LLM_CONCURRENCY`     | `4`                 |                                                                                                                                           |
-| `SPEC_CMD_TIMEOUT_MS` | `180000`            |                                                                                                                                           |
-| `OASDIFF_BIN`         | `oasdiff`           | Satu-satunya binary selain `git` yang boleh dijalankan                                                                                    |
+| Variabel                  | Default             | Keterangan                                                                                                                                |
+| ------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`       | — (opsional)        | Divalidasi saat panggilan Claude pertama, bukan saat start. Tidak pernah dicetak ke log atau pesan error, tidak diwariskan ke proses anak |
+| `ANTHROPIC_MODEL`         | — (wajib)           | Nama model untuk discovery dan ekstraksi                                                                                                  |
+| `PORT`                    | `4711`              | Host selalu `127.0.0.1`; tidak ada variabel untuk mengubahnya                                                                             |
+| `WORKSPACE_DIR`           | `~/.contract-check` | Harus absolut atau diawali `~`                                                                                                            |
+| `MAX_FILES_PER_CHECK`     | `40`                |                                                                                                                                           |
+| `MAX_LLM_CALLS_PER_CHECK` | `40`                | Batas panggilan ekstraksi ke Claude per check; cache hit tidak dihitung, sisanya dilewati                                                 |
+| `GIT_CONCURRENCY`         | `4`                 |                                                                                                                                           |
+| `LLM_CONCURRENCY`         | `4`                 |                                                                                                                                           |
+| `SPEC_CMD_TIMEOUT_MS`     | `180000`            |                                                                                                                                           |
+| `OASDIFF_BIN`             | `oasdiff`           | Satu-satunya binary selain `git` yang boleh dijalankan                                                                                    |
 
 ## Workspace
 

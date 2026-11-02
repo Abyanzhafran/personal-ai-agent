@@ -22,6 +22,8 @@ export interface Config {
   readonly anthropicApiKey: string | undefined;
   readonly anthropicModel: string;
   readonly maxFilesPerCheck: number;
+  /** Batas panggilan ekstraksi ke Claude per check; cache hit tidak dihitung. */
+  readonly maxLlmCallsPerCheck: number;
   readonly gitConcurrency: number;
   readonly llmConcurrency: number;
   readonly specCmdTimeoutMs: number;
@@ -73,6 +75,7 @@ const VARIABLES = {
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_MODEL: requiredString(),
   MAX_FILES_PER_CHECK: integer(40, 1),
+  MAX_LLM_CALLS_PER_CHECK: integer(40, 1),
   GIT_CONCURRENCY: integer(4, 1),
   LLM_CONCURRENCY: integer(4, 1),
   SPEC_CMD_TIMEOUT_MS: integer(180_000, 1),
@@ -123,6 +126,7 @@ export function parseConfig(
         anthropicApiKey: d.ANTHROPIC_API_KEY,
         anthropicModel: d.ANTHROPIC_MODEL,
         maxFilesPerCheck: d.MAX_FILES_PER_CHECK,
+        maxLlmCallsPerCheck: d.MAX_LLM_CALLS_PER_CHECK,
         gitConcurrency: d.GIT_CONCURRENCY,
         llmConcurrency: d.LLM_CONCURRENCY,
         specCmdTimeoutMs: d.SPEC_CMD_TIMEOUT_MS,

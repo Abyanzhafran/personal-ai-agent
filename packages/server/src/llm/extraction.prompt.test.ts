@@ -101,6 +101,22 @@ describe('buildExtractionPrompt', () => {
     );
   });
 
+  it('konteks hop 2 ditulis sebagai daftar sebelum isi file; tanpa konteks tidak ada bagiannya', () => {
+    const withContext = buildExtractionPrompt(
+      input({ context: ['useOrders calls GET /orders', 'listOrders calls GET /orders'] }),
+    ).prompt;
+    expect(withContext.user).toContain(
+      'File: src/api/orders.ts\nKnown wrappers:\n- useOrders calls GET /orders\n- listOrders calls GET /orders\n=== FILE ===',
+    );
+    expect(withContext.system).toContain('"Known wrappers" list');
+
+    for (const context of [undefined, []]) {
+      const { user } = buildExtractionPrompt(input({ context })).prompt;
+      expect(user).toContain('File: src/api/orders.ts\n=== FILE ===');
+      expect(user).not.toContain('Known wrappers');
+    }
+  });
+
   it('teks seperti {path} di dalam profil atau isi file tidak diganti', () => {
     const { user } = buildExtractionPrompt(
       input({ profile: 'pakai {content}', content: 'const t = "{path} {profile}";' }),

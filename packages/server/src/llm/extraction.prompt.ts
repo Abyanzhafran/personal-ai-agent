@@ -44,6 +44,8 @@ const SYSTEM = `You read one source file from a repository that calls other serv
 
 Report every HTTP API call found in the file, not only calls to the endpoints in the list. If the file ends with a truncation note, report only what is visible.
 
+If the message has a "Known wrappers" list, each item says that a function or hook defined elsewhere in the repository makes an API call, for example "useOrders calls GET /orders". For each place where this file uses such a wrapper, add one item: take "method" and "path" from the list item, set "line" to the line where the wrapper is used, and put the fields the code reads from its result in "response_fields_read". Do not report a wrapper that the file does not use.
+
 Return one JSON object with exactly one key, "calls": an array with one item per API call, [] if there is none. Each item has exactly these keys:
 - "method" (string): the HTTP method, for example GET.
 - "path" (string): the URL path exactly as written in the code, including template or variable parts such as \${id} or :id and any base URL prefix.
@@ -64,7 +66,7 @@ Endpoints of the system (context only):
 {endpoints}
 
 File: {path}
-=== FILE ===
+{wrappers}=== FILE ===
 {content}
 === END FILE ===`;
 
@@ -87,6 +89,8 @@ export interface ExtractionInput {
     readonly path: string;
     readonly operationId: string | null;
   }[];
+  /** Hop 2 (CC-043): fakta pembungkus API, mis. `useOrders calls GET /orders`. Tanpa ini = hop 1. */
+  readonly context?: readonly string[];
 }
 
 export interface ExtractionPrompt {
@@ -97,13 +101,19 @@ export interface ExtractionPrompt {
   readonly sent_lines: number;
 }
 
+/** Baris berkas seperti yang dinomori prompt; newline akhir bukan baris tambahan. */
+export function splitLines(content: string): string[] {
+  const lines = content.split(/\r?\n/);
+  if (lines.at(-1) === '') lines.pop();
+  return lines;
+}
+
 /**
  * Menomori baris dan memotong di batas baris: baris yang tidak muat seluruhnya ikut dibuang.
  * Satu baris yang sendirian melewati batas (mis. bundel minified) berarti tidak ada yang terkirim.
  */
 function numberLines(content: string) {
-  const lines = content.split(/\r?\n/);
-  if (lines.at(-1) === '') lines.pop(); // newline akhir bukan baris tambahan
+  const lines = splitLines(content);
 
   let size = 0;
   let sent = 0;
@@ -134,6 +144,9 @@ export function buildExtractionPrompt(input: ExtractionInput): ExtractionPrompt 
             .join('\n')
         : '(none)',
     path: input.path,
+    wrappers: input.context?.length
+      ? `Known wrappers:\n${input.context.map((fact) => `- ${fact}`).join('\n')}\n`
+      : '',
     content: file.text,
   };
   // Satu putaran, sehingga "{path}" di dalam isi file atau profil tidak ikut diganti.

@@ -22,6 +22,7 @@ function config(overrides: Partial<Config> = {}): Config {
     anthropicApiKey: 'k',
     anthropicModel: 'm',
     maxFilesPerCheck: 40,
+    maxLlmCallsPerCheck: 40,
     gitConcurrency: 4,
     llmConcurrency: 4,
     specCmdTimeoutMs: 180_000,
