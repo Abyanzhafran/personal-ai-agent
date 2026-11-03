@@ -119,6 +119,19 @@ describe('startApp', () => {
     }
   });
 
+  it('memasang rute check: repo provider yang tidak ada → 404 repo_not_found', async () => {
+    app = await startApp(config(), { logger: silent() });
+
+    const res = await fetch(`http://127.0.0.1:${app.port}/api/checks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider_repo_id: 999, head_ref: 'feature/xyz' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('repo_not_found');
+  });
+
   describe('cek oasdiff saat start (CC-034)', () => {
     const capture = () => {
       const lines: { level: number; msg: string }[] = [];

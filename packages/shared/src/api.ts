@@ -43,6 +43,8 @@ export const ERROR_CODES = {
   check_already_running: 'check_already_running',
   /** DELETE project atau repo selagi check berjalan memakainya (409). */
   check_in_progress: 'check_in_progress',
+  /** oasdiff tidak terpasang atau terlalu lama (503); pesannya menjelaskan cara memperbaikinya. */
+  oasdiff_unavailable: 'oasdiff_unavailable',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */

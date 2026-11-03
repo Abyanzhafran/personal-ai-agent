@@ -5,6 +5,7 @@ import { openDatabase, type Db } from './db/database.js';
 import { migrate } from './db/migrate.js';
 import { createOasdiff, type Oasdiff } from './diff/oasdiff.js';
 import { createGitAdapter, type GitAdapter } from './git/adapter.js';
+import { checkRoutes } from './checks/routes.js';
 import { createApp, type AppDeps } from './http/app.js';
 import { createLlmClient } from './llm/client.js';
 import type { Logger } from './logger.js';
@@ -12,6 +13,7 @@ import { createCommandRunner, type CommandRunner } from './proc/run-command.js';
 import { projectRoutes } from './projects/routes.js';
 import { createDiscoveryRunner, type DiscoveryRunner } from './repos/discovery.js';
 import { repoRoutes } from './repos/routes.js';
+import { createCheckRunner, type CheckRunner } from './runner/check.js';
 import { WorkspaceLayout } from './workspace/layout.js';
 import { WorkspaceStore } from './workspace/store.js';
 
@@ -25,6 +27,7 @@ export interface AppContext {
   readonly git: GitAdapter;
   readonly discovery: DiscoveryRunner;
   readonly oasdiff: Oasdiff;
+  readonly checks: CheckRunner;
 }
 
 export interface RunningApp {
@@ -61,6 +64,8 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
   });
   const git = createGitAdapter(runner);
   const llm = createLlmClient({ config, logger });
+  const discovery = createDiscoveryRunner({ db, workspace, git, llm, logger, config });
+  const oasdiff = createOasdiff({ runner, bin: config.oasdiffBin });
   const context: AppContext = {
     config,
     logger,
@@ -68,11 +73,22 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
     workspace,
     runner,
     git,
-    discovery: createDiscoveryRunner({ db, workspace, git, llm, logger, config }),
-    oasdiff: createOasdiff({ runner, bin: config.oasdiffBin }),
+    discovery,
+    oasdiff,
+    checks: createCheckRunner({
+      db,
+      config,
+      logger,
+      workspace,
+      git,
+      runner,
+      oasdiff,
+      llm,
+      discovery,
+    }),
   };
 
-  // oasdiff yang hilang atau terlalu lama tidak menghentikan server; check-nya yang ditolak (CC-060).
+  // oasdiff yang hilang atau terlalu lama tidak menghentikan server; check-nya yang ditolak (POST /api/checks).
   // Tidak ditunggu: menelusuri PATH untuk binary yang tidak ada lambat di Windows saat mesin sibuk,
   // dan itu tidak boleh menunda `listen`. Hasilnya di-cache, jadi check berikutnya menunggu probe yang sama.
   void context.oasdiff.capability().then((oasdiff) => {
@@ -81,7 +97,7 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
   });
 
   // `createApp` hanya menerima satu fungsi `registerRoutes`; rute tiap fitur digabung di sini.
-  const routes = [projectRoutes(context), repoRoutes(context)];
+  const routes = [projectRoutes(context), repoRoutes(context), checkRoutes(context)];
   const app = createApp({
     logger,
     ...(options.webDist === undefined ? {} : { webDist: options.webDist }),
@@ -110,10 +126,11 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
     port,
     async close() {
       // stop() mengabort lebih dulu (sinkron), baru proses git dibunuh: kegagalan karena shutdown
-      // tidak boleh tercatat sebagai galat discovery. DB baru ditutup setelah semua job berhenti.
+      // tidak boleh tercatat sebagai galat discovery atau check Gagal. DB baru ditutup setelah semua job berhenti.
       const discoveryStopped = context.discovery.stop();
+      const checksStopped = context.checks.stop();
       runner.killAll();
-      await discoveryStopped;
+      await Promise.all([discoveryStopped, checksStopped]);
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
         server.closeAllConnections();
