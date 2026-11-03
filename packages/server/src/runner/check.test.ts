@@ -416,6 +416,21 @@ describe('pipeline enam langkah (fixture asli, oasdiff dan Claude palsu)', () =>
     expect(summary.matched_fields['POST /orders']).toEqual(['customer_id', 'items']);
     expect(summary.matched_fields['GET /orders']).toEqual(['status', 'items']);
 
+    // Cuplikan awet (CC-048): persis baris di SHA consumer, dan tidak berubah walau berkasnya diubah kemudian.
+    const consumerSha = summary.consumer_shas['mfe-dashboard'] as string;
+    const atSha = rawGit(mfe.path, 'show', `${consumerSha}:src/api/orders.ts`).split('\n');
+    for (const line of querySnippet.lines) expect(line.text).toBe(atSha[line.n - 1]);
+    const ordersFile = path.join(mfe.path, 'src/api/orders.ts');
+    const original = await fs.readFile(ordersFile, 'utf8');
+    await fs.writeFile(ordersFile, 'export const diubah = 1;\n');
+    try {
+      expect(findingRows(check.id).find((r) => r.line === listLine)?.snippet_json).toBe(
+        removedQuery?.snippet_json,
+      );
+    } finally {
+      await fs.writeFile(ordersFile, original);
+    }
+
     // Artefak langkah 1 dan hasil ekstraksi (6 panggilan Claude, satu berkas per hasil).
     for (const name of ['spec-base.json', 'spec-head.json', 'changelog.json']) {
       await expect(fs.stat(layout.checkArtifact(check.id, name))).resolves.toBeDefined();
@@ -546,9 +561,14 @@ describe('batas dan kegagalan spec', () => {
 
     expect(checksRepo().get(started.id)?.status).toBe('findings');
     const summary = summaryOf(started.id);
-    expect(summary.incomplete).toBe(true);
-    expect(summary.skipped_files).toBeGreaterThanOrEqual(3); // lima kandidat hop 1, dua diekstrak
-    expect(summary.files_checked).toBeLessThanOrEqual(4); // maks dua per hop
+    // Lima kandidat hop 1: dua teratas (match_count) diekstrak, tiga dilewati. Hop 2 menemukan
+    // OrdersPage.tsx lewat useOrders, jadi tiga berkas diperiksa.
+    expect(summary).toMatchObject({
+      incomplete: true,
+      skipped_files: 3,
+      files_checked: 3,
+      files_via_hop2: 1,
+    });
   }, 120_000);
 
   it('Swagger 2 yang tidak bisa dikonversi → failed, bukan clean (D-56)', async () => {
