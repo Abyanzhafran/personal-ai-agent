@@ -11,9 +11,11 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
+import { useState } from 'react';
 import { useT } from '../lib/i18n';
 import { cn } from '../lib/cn';
 import { useProject, useProjectRepos, useProjects, useRunDiscovery } from '../lib/projects';
+import { AddRepoDialog } from './add-repo-dialog';
 import { NewProjectDialog } from './new-project-dialog';
 import { PageHeader } from './page-header';
 import { Button, buttonVariants } from './ui/button';
@@ -115,7 +117,7 @@ function RepoTable({ repos }: { repos: readonly ProjectRepo[] }) {
 }
 
 /** Project tanpa repo (CC-077): dua syarat siap-check dan alasan dari server, bukan tombol mati. */
-function EmptyRepos({ reason }: { reason: string | null | undefined }) {
+function EmptyRepos({ reason, onAdd }: { reason: string | null | undefined; onAdd: () => void }) {
   const t = useT();
   return (
     <div className="flex flex-col items-center gap-4 rounded-md border border-outline-variant bg-surface-container-lowest px-6 py-12 text-center">
@@ -138,8 +140,7 @@ function EmptyRepos({ reason }: { reason: string | null | undefined }) {
           </li>
         ))}
       </ul>
-      {/* Dialognya dipasang CC-078. */}
-      <Button disabled>
+      <Button onClick={onAdd}>
         <Plus aria-hidden />
         {t('projects.addRepo')}
       </Button>
@@ -161,6 +162,7 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
   // Alasan check belum bisa jalan hanya ditampilkan di state kosong, jadi hanya diminta di sana.
   const detail = useProject(repos?.length === 0 ? current?.id : undefined).data;
   const discovery = useRunDiscovery(current?.id ?? 0);
+  const [adding, setAdding] = useState(false);
 
   const pendingReview = repos?.filter((repo) => repo.profile_status === 'pending_review').length;
   const subtitle =
@@ -213,8 +215,7 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
                   <Sparkles aria-hidden />
                   {t('projects.discover')}
                 </Button>
-                {/* Dialognya dipasang CC-078. */}
-                <Button disabled>
+                <Button onClick={() => setAdding(true)}>
                   <Plus aria-hidden />
                   {t('projects.addRepo')}
                 </Button>
@@ -223,10 +224,11 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
           }
         />
         {projects && !current && <p>{t('projects.notFound')}</p>}
+        {current && <AddRepoDialog project={current} open={adding} onOpenChange={setAdding} />}
         {repos && (
           <>
             {repos.length === 0 ? (
-              <EmptyRepos reason={detail?.not_ready_reason} />
+              <EmptyRepos reason={detail?.not_ready_reason} onAdd={() => setAdding(true)} />
             ) : (
               <RepoTable repos={repos} />
             )}

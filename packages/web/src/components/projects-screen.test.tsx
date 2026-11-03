@@ -247,14 +247,11 @@ describe('tabel repo', () => {
 });
 
 describe('tombol aksi', () => {
-  it('Panduan menuju /panduan; Tambah repo nonaktif sampai dialognya ada (CC-078)', async () => {
+  it('Panduan menuju /panduan', async () => {
     withRepos();
     renderAt('/');
     const guide = await screen.findByRole('link', { name: 'Panduan' });
     expect(guide.getAttribute('href')).toBe('/panduan');
-    expect(
-      (screen.getByRole('button', { name: 'Tambah repo' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
   });
 
   it('Jalankan discovery memindai repo belum dipindai dan menunggu review, bukan yang disetujui, e2e, atau sedang dipindai', async () => {
@@ -294,9 +291,9 @@ describe('project tanpa repo', () => {
       'Minimal 1 consumer (microfrontend atau service lain)Belum',
     ]);
     expect(await card.findByText(NOT_READY)).toBeTruthy();
-    expect((card.getByRole('button', { name: 'Tambah repo' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    // Tombol di kartu ini membuka dialog yang sama dengan tombol di header.
+    await userEvent.click(card.getByRole('button', { name: 'Tambah repo' }));
+    expect(await screen.findByRole('dialog', { name: 'Tambah repo' })).toBeTruthy();
   });
 });
 
@@ -427,6 +424,190 @@ describe('dialog Project baru', () => {
     expect(fieldsOf(await screen.findByRole('dialog', { name: 'Project baru' })).name.value).toBe(
       '',
     );
+    expect(posted()).toEqual([]);
+  });
+});
+
+describe('dialog Tambah repo', () => {
+  const REPOS_URL = '/api/projects/1/repos';
+
+  async function openDialog() {
+    renderAt('/');
+    await tableCells();
+    await userEvent.click(screen.getByRole('button', { name: 'Tambah repo' }));
+    return screen.findByRole('dialog', { name: 'Tambah repo' });
+  }
+  const fieldsOf = (dialog: HTMLElement) => ({
+    path: within(dialog).getByLabelText('Path lokal') as HTMLInputElement,
+    name: within(dialog).getByLabelText('Nama repo') as HTMLInputElement,
+    branch: within(dialog).getByLabelText('Default branch') as HTMLInputElement,
+    save: within(dialog).getByRole('button', { name: 'Simpan' }) as HTMLButtonElement,
+  });
+  const role = (dialog: HTMLElement, name: string) => within(dialog).getByRole('button', { name });
+  const posted = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+  const bodyOf = (call: (typeof fetchMock.mock.calls)[number]) =>
+    JSON.parse(call[1]?.body as string);
+
+  it('judul menyebut project tujuan; peran awalnya service', async () => {
+    withRepos();
+    const dialog = await openDialog();
+    expect(within(dialog).getByText('Ke project Order Platform')).toBeTruthy();
+    expect(role(dialog, 'service').getAttribute('aria-pressed')).toBe('true');
+    expect(role(dialog, 'microfrontend').getAttribute('aria-pressed')).toBe('false');
+    expect(role(dialog, 'e2e').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('tidak ada request apa pun selama mengisi isian, sebelum Simpan', async () => {
+    withRepos();
+    const dialog = await openDialog();
+    const { path, name, branch } = fieldsOf(dialog);
+    const before = fetchMock.mock.calls.length;
+
+    await userEvent.type(path, '/work/svc-inventory');
+    await userEvent.type(name, '-baru');
+    await userEvent.type(branch, 'develop');
+    await userEvent.click(role(dialog, 'e2e'));
+
+    expect(fetchMock.mock.calls.length).toBe(before);
+  });
+
+  it('mengisi path memperbarui nama default sampai user mengubah nama sendiri', async () => {
+    withRepos();
+    const dialog = await openDialog();
+    const { path, name } = fieldsOf(dialog);
+
+    await userEvent.type(path, '/work/svc-inventory');
+    expect(name.value).toBe('svc-inventory');
+    await userEvent.clear(path);
+    await userEvent.type(path, 'C:\\work\\svc-payment\\');
+    expect(name.value).toBe('svc-payment');
+
+    await userEvent.type(name, '-lama');
+    await userEvent.type(path, 'x');
+    expect(name.value).toBe('svc-payment-lama');
+  });
+
+  it('Simpan: kirim isian (nama default tidak dikirim), dialog menutup, baris baru muncul dan ikut diperbarui', async () => {
+    const added = repo({ id: 16, name: 'svc-added', profile_status: 'scanning' });
+    // 0: sebelum simpan; 1: sesudah simpan (sedang dipindai); 2: pindai selesai.
+    let phase = 0;
+    withRepos(REPOS, {
+      [`GET ${REPOS_URL}`]: () =>
+        phase === 0
+          ? REPOS
+          : [...REPOS, phase++ === 1 ? added : { ...added, profile_status: 'pending_review' }],
+      [`POST ${REPOS_URL}`]: () => {
+        phase = 1;
+        return { ...added, profile_status: 'not_scanned' };
+      },
+    });
+    const dialog = await openDialog();
+    const { path, branch, save } = fieldsOf(dialog);
+    await userEvent.type(path, '/work/svc-added');
+    await userEvent.type(branch, 'develop');
+    await userEvent.click(role(dialog, 'microfrontend'));
+    await userEvent.click(save);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(posted().map((call) => [call[0], bodyOf(call)])).toEqual([
+      [
+        REPOS_URL,
+        { role: 'microfrontend', local_path: '/work/svc-added', default_branch: 'develop' },
+      ],
+    ]);
+
+    const statusOf = async (repoName: string) => {
+      const row = (await screen.findByText(repoName)).closest('tr')!;
+      return within(row).getAllByRole('cell')[5]!.textContent;
+    };
+    await waitFor(async () => expect(await statusOf('svc-added')).toBe('Sedang dipindai'));
+    await waitFor(async () => expect(await statusOf('svc-added')).toBe('Menunggu review'), {
+      timeout: 5000,
+    });
+  }, 10_000);
+
+  it('nama yang diubah user ikut dikirim', async () => {
+    withRepos(REPOS, { [`POST ${REPOS_URL}`]: () => repo({ id: 16, name: 'kustom' }) });
+    const dialog = await openDialog();
+    const { path, name, save } = fieldsOf(dialog);
+    await userEvent.type(path, '/work/svc-added');
+    await userEvent.clear(name);
+    await userEvent.type(name, 'kustom');
+    await userEvent.click(save);
+
+    await waitFor(() => expect(posted()).toHaveLength(1));
+    expect(bodyOf(posted()[0]!)).toEqual({
+      role: 'service',
+      local_path: '/work/svc-added',
+      name: 'kustom',
+      default_branch: '',
+    });
+  });
+
+  it.each([
+    ['bukan repo git', 'local_path', 400, 'repo_not_git', 'Folder ini bukan repo git: /work/x'],
+    [
+      'branch tidak ada',
+      'default_branch',
+      400,
+      'branch_not_found',
+      'Branch "dev" tidak ada di origin.',
+    ],
+    ['path duplikat', 'local_path', 409, 'repo_path_taken', 'Path sudah terdaftar di project ini'],
+    ['nama duplikat', 'name', 409, 'repo_name_taken', 'Nama repo "x" sudah dipakai repo lain.'],
+  ] as const)(
+    'galat server (%s) tampil di isian yang tepat, dialog tetap terbuka, isian tidak hilang',
+    async (_label, field, status, code, message) => {
+      const details = { fields: [{ in: 'body', path: field, message }] };
+      withRepos(REPOS, {
+        [`POST ${REPOS_URL}`]: () => json({ error: { code, message, details } }, status),
+      });
+      const dialog = await openDialog();
+      const fields = fieldsOf(dialog);
+      await userEvent.type(fields.path, '/work/x');
+      await userEvent.type(fields.branch, 'dev');
+      await userEvent.click(fields.save);
+
+      const alert = await within(dialog).findByRole('alert');
+      expect(alert.textContent).toBe(message);
+      const target = { local_path: fields.path, name: fields.name, default_branch: fields.branch }[
+        field
+      ];
+      const hint = document.getElementById(target.getAttribute('aria-describedby')!);
+      expect(hint?.contains(alert)).toBe(true);
+      expect(target.getAttribute('aria-invalid')).toBe('true');
+      expect(screen.getByRole('dialog')).toBe(dialog);
+      expect([fields.path.value, fields.branch.value]).toEqual(['/work/x', 'dev']);
+      // Hanya satu kemunculan: galat yang menunjuk isian tidak ikut menjadi toast.
+      expect(screen.getAllByText(message)).toHaveLength(1);
+    },
+  );
+
+  it('Simpan nonaktif selama request berjalan', async () => {
+    let finish!: (res: Response) => void;
+    withRepos(REPOS, {
+      [`POST ${REPOS_URL}`]: () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    const dialog = await openDialog();
+    const { path, save } = fieldsOf(dialog);
+    await userEvent.type(path, '/work/x');
+    await userEvent.click(save);
+    await waitFor(() => expect(save.disabled).toBe(true));
+
+    finish(json(repo({ id: 16, name: 'x' }), 201));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('Batal menutup dialog; pembukaan berikutnya mulai dari isian kosong', async () => {
+    withRepos();
+    const dialog = await openDialog();
+    await userEvent.type(fieldsOf(dialog).path, '/work/setengah');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Batal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tambah repo' }));
+    const again = await screen.findByRole('dialog', { name: 'Tambah repo' });
+    expect(fieldsOf(again).path.value).toBe('');
     expect(posted()).toEqual([]);
   });
 });

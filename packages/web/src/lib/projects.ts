@@ -1,4 +1,11 @@
-import { Project, ProjectDetail, ProjectRepo, RepoProfileResponse } from '@cc/shared';
+import {
+  Project,
+  ProjectDetail,
+  ProjectRepo,
+  Repo,
+  RepoProfileResponse,
+  type Role,
+} from '@cc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from './api';
 import { useApiMutation } from './mutation';
@@ -34,6 +41,14 @@ export const useCreateProject = () =>
     mutationFn: (body: { name: string; description: string }) =>
       apiFetch('/api/projects', Project, { method: 'POST', body }),
     invalidates: [['projects']],
+  });
+
+/** Server mendeteksi `default_branch` dari origin/HEAD bila kosong, dan `name` dari folder bila tidak dikirim. */
+export const useCreateRepo = (projectId: number) =>
+  useApiMutation({
+    mutationFn: (body: { role: Role; local_path: string; name?: string; default_branch: string }) =>
+      apiFetch(`/api/projects/${projectId}/repos`, Repo, { method: 'POST', body }),
+    invalidates: [['projects', projectId]],
   });
 
 /** Memulai discovery untuk repo yang diberikan; server membalas 202 dan memindai di latar belakang. */
