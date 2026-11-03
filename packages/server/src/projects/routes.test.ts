@@ -12,6 +12,7 @@ import { openDatabase, type Db } from '../db/database.js';
 import { migrate } from '../db/migrate.js';
 import { createApp } from '../http/app.js';
 import { createLogger } from '../logger.js';
+import { createCheckRegistry, type CheckRegistry } from '../runner/registry.js';
 import { WorkspaceLayout } from '../workspace/layout.js';
 import { WorkspaceStore } from '../workspace/store.js';
 import { projectRoutes } from './routes.js';
@@ -23,6 +24,7 @@ let tmp: string;
 let db: Db;
 let layout: WorkspaceLayout;
 let app: ReturnType<typeof createApp>;
+let registry: CheckRegistry;
 
 beforeAll(async () => {
   fixturesTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-projects-fx-'));
@@ -40,9 +42,10 @@ beforeEach(async () => {
   await workspace.ensure();
   db = openDatabase(':memory:');
   migrate(db);
+  registry = createCheckRegistry();
   app = createApp({
     logger: createLogger({ level: 'silent' }),
-    registerRoutes: projectRoutes({ db, workspace }),
+    registerRoutes: projectRoutes({ db, workspace, checks: { registry } }),
   });
 });
 
@@ -436,5 +439,28 @@ describe('DELETE /api/projects/:id', () => {
     const first = (await create({ name: 'Order' })).body as Project;
     await request(app).delete(`/api/projects/${first.id}`);
     expect((await create({ name: 'Order' })).status).toBe(201);
+  });
+});
+
+describe('DELETE /api/projects/:id saat check berjalan (G-7)', () => {
+  it('409 check_in_progress dan data utuh; setelah check selesai DELETE berhasil', async () => {
+    const project = (await create({ name: 'Order' })).body as Project;
+    registry.add({
+      checkId: 1,
+      projectId: project.id,
+      repoIds: new Set(),
+      abort: new AbortController(),
+      done: Promise.resolve(),
+    });
+
+    const blocked = await request(app).delete(`/api/projects/${project.id}`);
+
+    expect(blocked.status).toBe(409);
+    expect(errorOf(blocked.body).code).toBe('check_in_progress');
+    expect(count('projects')).toBe(1);
+
+    registry.remove(1);
+    expect((await request(app).delete(`/api/projects/${project.id}`)).status).toBe(204);
+    expect(count('projects')).toBe(0);
   });
 });

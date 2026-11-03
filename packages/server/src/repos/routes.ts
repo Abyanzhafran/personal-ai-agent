@@ -20,6 +20,7 @@ import { normalizeLocalPath } from '../git/paths.js';
 import { HttpError } from '../http/errors.js';
 import { validated } from '../http/validate.js';
 import { createProjectRepository } from '../projects/repository.js';
+import type { CheckRunner } from '../runner/check.js';
 import { assertSafeSegment, WorkspacePathError } from '../workspace/layout.js';
 import type { WorkspaceStore } from '../workspace/store.js';
 import type { DiscoveryRunner } from './discovery.js';
@@ -32,6 +33,8 @@ export interface RepoRouteDeps {
   readonly git: GitAdapter;
   readonly config: Pick<Config, 'gitConcurrency'>;
   readonly discovery: DiscoveryRunner;
+  /** Menolak DELETE selagi repo dibaca check yang berjalan (G-7). */
+  readonly checks: { readonly registry: Pick<CheckRunner['registry'], 'usesRepo'> };
 }
 
 const projectNotFound = () =>
@@ -87,6 +90,7 @@ export function repoRoutes({
   git,
   config,
   discovery,
+  checks,
 }: RepoRouteDeps): (api: Router) => void {
   const projects = createProjectRepository(db);
   const repos = createRepoRepository(db);
@@ -323,6 +327,13 @@ export function repoRoutes({
       validated({ params: RepoIdParams }, async ({ params }, _req, res) => {
         const repo = repos.get(params.id);
         if (!repo) throw repoNotFound();
+        if (checks.registry.usesRepo(repo.id)) {
+          throw new HttpError(
+            409,
+            ERROR_CODES.check_in_progress,
+            'Repo ini sedang dibaca check yang berjalan. Tunggu sampai selesai sebelum menghapusnya.',
+          );
+        }
         const project = projects.get(repo.project_id);
         if (!project) throw projectNotFound();
         // Berkas dulu, baris DB sesudahnya (pola yang sama dengan DELETE project): kegagalan di
