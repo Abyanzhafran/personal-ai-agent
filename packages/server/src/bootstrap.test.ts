@@ -161,6 +161,37 @@ describe('startApp', () => {
       expect(warning?.msg).toContain('OASDIFF_BIN');
     });
 
+    it('tidak terpasang: POST /api/checks ditolak 503 dengan pesan cara pasang, tanpa baris check', async () => {
+      app = await startApp(config({ oasdiffBin: 'oasdiff-tidak-terpasang-xyz' }), {
+        logger: silent(),
+      });
+      const { db } = app.context;
+      const projectId = Number(
+        db.prepare("INSERT INTO projects (name, slug) VALUES ('Order', 'order')").run()
+          .lastInsertRowid,
+      );
+      const repoId = Number(
+        db
+          .prepare(
+            `INSERT INTO repos (project_id, role, name, local_path, default_branch)
+             VALUES (?, 'service', 'svc-order', ?, 'main')`,
+          )
+          .run(projectId, tmp).lastInsertRowid,
+      );
+
+      const res = await fetch(`http://127.0.0.1:${app.port}/api/checks`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider_repo_id: repoId, head_ref: 'feature/xyz' }),
+      });
+
+      expect(res.status).toBe(503);
+      const { error } = (await res.json()) as { error: { code: string; message: string } };
+      expect(error.code).toBe('oasdiff_unavailable');
+      expect(error.message).toContain('OASDIFF_BIN');
+      expect(db.prepare('SELECT COUNT(*) AS n FROM checks').get()).toEqual({ n: 0 });
+    });
+
     it('terpasang dengan versi memadai: dicatat sekali saat start', async () => {
       const { lines, logger } = capture();
       // `node` berpura-pura menjadi oasdiff: `--version` mencetak versinya.

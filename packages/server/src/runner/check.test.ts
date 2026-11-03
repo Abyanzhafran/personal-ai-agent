@@ -408,6 +408,7 @@ describe('pipeline enam langkah (fixture asli, oasdiff dan Claude palsu)', () =>
       fetch_errors: [],
     });
     expect(summary.tool_versions['oasdiff']).toBe('1.35.0');
+    expect(summary.tool_versions['node']).toMatch(/^v\d+/); // dari spec_cmd (D-51)
     expect(Object.keys(summary.consumer_shas).sort()).toEqual(['mfe-dashboard', 'svc-payment']);
     expect(summary.consumer_shas['mfe-dashboard']).toBe(
       rawGit(mfe.path, 'rev-parse', 'origin/main'),
@@ -533,6 +534,50 @@ describe('pipeline enam langkah (fixture asli, oasdiff dan Claude palsu)', () =>
     expect(failed.error).toContain('provider-rusak');
     expect(failed.error).toContain('Fetch gagal');
   }, 120_000);
+});
+
+describe('batas dan kegagalan spec', () => {
+  it('batas berkas per check memotong kandidat: ringkasan incomplete dengan jumlah yang terlewat', async () => {
+    const limited = createCheckRunner({ ...deps, config: { ...deps.config, maxFilesPerCheck: 2 } });
+    const provider = providerOf(allFixtures());
+
+    const started = await limited.start({ provider, baseRef: 'main', headRef: 'feature/xyz' });
+    await limited.registry.forProject(provider.project_id)?.done;
+
+    expect(checksRepo().get(started.id)?.status).toBe('findings');
+    const summary = summaryOf(started.id);
+    expect(summary.incomplete).toBe(true);
+    expect(summary.skipped_files).toBeGreaterThanOrEqual(3); // lima kandidat hop 1, dua diekstrak
+    expect(summary.files_checked).toBeLessThanOrEqual(4); // maks dua per hop
+  }, 120_000);
+
+  it('Swagger 2 yang tidak bisa dikonversi → failed, bukan clean (D-56)', async () => {
+    const bare = path.join(tmp, 'swagger.git');
+    const work = path.join(tmp, 'swagger');
+    await fs.mkdir(work, { recursive: true });
+    rawGit(tmp, 'init', '--quiet', '--bare', bare);
+    rawGit(work, 'init', '--quiet', '--initial-branch=main');
+    await fs.writeFile(
+      path.join(work, 'swagger.json'),
+      JSON.stringify({ swagger: '2.0', paths: 'bukan objek' }),
+    );
+    rawGit(work, 'add', '.');
+    rawGit(work, 'commit', '--quiet', '-m', 'awal');
+    rawGit(work, 'checkout', '--quiet', '-b', 'fitur');
+    await fs.appendFile(path.join(work, 'swagger.json'), '\n');
+    rawGit(work, 'commit', '--quiet', '-am', 'fitur');
+    rawGit(work, 'remote', 'add', 'origin', bare);
+    rawGit(work, 'push', '--quiet', 'origin', 'main', 'fitur');
+    const [provider] = register([
+      { name: 'swagger', role: 'service', path: work, specPath: 'swagger.json' },
+    ]);
+
+    const check = await finish(provider as Repo, 'fitur');
+
+    expect(check.status).toBe('failed');
+    expect(check.error).toContain('gagal dikonversi dari Swagger 2');
+    expect(changelog).not.toHaveBeenCalled();
+  }, 60_000);
 });
 
 describe('registry dan abort', () => {
