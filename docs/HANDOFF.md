@@ -6,9 +6,9 @@ Catatan untuk agent yang melanjutkan. Riwayat per task ada di `git log` dan kart
 
 - **Sesi terakhir**: 2026-11-03.
 - **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074, 075 (G2); CC-016–020, 076–079 (G3; AC yang sengaja kosong: CC-076 AC3 dan AC4, lihat D-48); CC-030–032, 034–038 (G4; AC yang sengaja kosong: D-35–D-38, D-51); CC-040–048 (G5; AC yang sengaja kosong: D-40, D-42, D-43, D-47); CC-084 (G7, lihat D-50); CC-049 (D-54). Sisa 19 task. CC-073 selesai kecuali satu AC: lebar 1360/960/640 **belum dicentang** karena belum dilihat dengan mata (jsdom hanya membuktikan nama kelas). Sama untuk CC-076 AC4 (path dan branch mono + ellipsis). Cek lewat `npm run dev`, lalu centang. Tampilan `/`, dialog, `/repos/:id/discovery`, dan `/panduan` belum dinilai dengan mata.
-- **`npm run verify`**: hijau terakhir setelah CC-084 dan G-10 (57 file, 973 test), dengan `GIT_*` dilepas (bagian 7). Dua run sebelumnya gagal karena time-out 5 dtk pada test git yang berbeda tiap run; project server kini `testTimeout` 30 dtk (`packages/server/vitest.config.ts`).
+- **`npm run verify`**: hijau terakhir setelah CC-049 (62 file, 1035 test), dengan `GIT_*` dilepas (bagian 7). Project server memakai `testTimeout` 30 dtk (`packages/server/vitest.config.ts`) karena test git kadang melewati 5 dtk.
 - **Node**: lokal v24. Node 20 belum diuji ulang sejak CC-090 (terakhir lolos 314 test di Docker, lihat bagian 7).
-- **Commit**: pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. Lima commit sesi ini (CC-084, perbaikan G-10, tiga `docs:`) belum di-push; cek `git status -sb`.
+- **Commit**: pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. Commit sesi ini (CC-031, 032, 036, 049) belum di-push; cek `git status -sb`.
 - **Backlog** (Claude Docs, rev 107): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
   - Backlog: `https://claude.ai/artifact/9JhEHyYAfGbdEspd7yGmdi` (id `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299`)
   - Arsitektur: `https://claude.ai/artifact/Wi1pbDYivJM7MkPeF8ctno` (id `f0930578-8d3d-418a-81f1-589fc8622f74`)
