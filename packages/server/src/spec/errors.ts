@@ -20,3 +20,16 @@ export class SpecParseError extends Error {
     this.name = 'SpecParseError';
   }
 }
+
+/** `spec_cmd` keluar dengan kode bukan nol. `stderrTail` = 20 baris terakhir stderr. */
+export class SpecGenError extends Error {
+  constructor(
+    readonly sha: string,
+    readonly command: string,
+    readonly exitCode: number,
+    readonly stderrTail: string,
+  ) {
+    super(`spec_cmd gagal (exit ${exitCode}) di ${sha}: ${command}\n${stderrTail}`);
+    this.name = 'SpecGenError';
+  }
+}
