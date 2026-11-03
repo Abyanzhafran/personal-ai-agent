@@ -46,6 +46,8 @@ export const ERROR_CODES = {
   /** oasdiff tidak terpasang atau terlalu lama (503); pesannya menjelaskan cara memperbaikinya. */
   oasdiff_unavailable: 'oasdiff_unavailable',
   check_not_found: 'check_not_found',
+  /** Batalkan check yang sudah selesai atau tidak sedang berjalan (409). */
+  check_not_running: 'check_not_running',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */

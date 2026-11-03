@@ -23,6 +23,17 @@ describe('createCheckRegistry', () => {
     expect(registry.forProject(11)?.checkId).toBe(3);
   });
 
+  it('byCheck menemukan job menurut id check, undefined bila tidak berjalan', () => {
+    const registry = createCheckRegistry();
+    const running = job();
+    registry.add(running);
+
+    expect(registry.byCheck(1)).toBe(running);
+    expect(registry.byCheck(2)).toBeUndefined();
+    registry.remove(1);
+    expect(registry.byCheck(1)).toBeUndefined();
+  });
+
   it('remove melepas job menurut id check; project bisa dipakai lagi', () => {
     const registry = createCheckRegistry();
     registry.add(job());

@@ -31,6 +31,11 @@ export function createCheckRegistry() {
 
     forProject: (projectId: number): ActiveJob | undefined => byProject.get(projectId),
 
+    byCheck(checkId: number): ActiveJob | undefined {
+      for (const job of byProject.values()) if (job.checkId === checkId) return job;
+      return undefined;
+    },
+
     /** True bila repo ini provider atau consumer check yang sedang berjalan. */
     usesRepo(repoId: number): boolean {
       for (const job of byProject.values()) if (job.repoIds.has(repoId)) return true;

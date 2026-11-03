@@ -51,6 +51,14 @@ export class CheckAlreadyRunningError extends Error {
   }
 }
 
+/** Check yang mau dibatalkan tidak sedang berjalan (sudah selesai, atau tidak pernah ada di memori). */
+export class CheckNotRunningError extends Error {
+  constructor(readonly checkId: number) {
+    super(`Check #${checkId} tidak sedang berjalan`);
+    this.name = 'CheckNotRunningError';
+  }
+}
+
 export interface StartCheckInput {
   readonly provider: Repo;
   readonly baseRef: string;
@@ -290,6 +298,21 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
         abort,
         done,
       });
+      return check;
+    },
+
+    /**
+     * Membatalkan satu check dan menunggu statusnya tertulis (child process dibunuh, panggilan Claude
+     * diputus, worktree dihapus, tanpa finding parsial). Melempar {@link CheckNotRunningError} bila check
+     * itu tidak berjalan, atau sudah selesai lebih dulu daripada abort.
+     */
+    async cancel(checkId: number): Promise<Check> {
+      const job = registry.byCheck(checkId);
+      if (!job) throw new CheckNotRunningError(checkId);
+      job.abort.abort();
+      await job.done;
+      const check = checks.get(checkId) as Check;
+      if (check.status !== 'cancelled') throw new CheckNotRunningError(checkId);
       return check;
     },
 
