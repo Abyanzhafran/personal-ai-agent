@@ -2,6 +2,7 @@
 export const APP_NAME = 'Contract Check';
 
 export * from './api.js';
+export * from './checks.js';
 export * from './domain.js';
 export * from './events.js';
 export * from './projects.js';
