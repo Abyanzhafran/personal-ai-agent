@@ -130,6 +130,12 @@ describe('startApp', () => {
 
     expect(res.status).toBe(404);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('repo_not_found');
+
+    const events = await fetch(`http://127.0.0.1:${app.port}/api/checks/999/events`);
+    expect(events.status).toBe(404);
+    expect(((await events.json()) as { error: { code: string } }).error.code).toBe(
+      'check_not_found',
+    );
   });
 
   describe('cek oasdiff saat start (CC-034)', () => {
