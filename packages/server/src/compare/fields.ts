@@ -1,7 +1,7 @@
 import type { ChangedEndpoint } from '../diff/endpoints.js';
 import type { ApiCall } from '../llm/extraction.prompt.js';
 import { readOperation } from './operation.js';
-import { callFindings, type FindingSource } from './severity.js';
+import { callFindings, type FindingSource, type Specs } from './severity.js';
 
 // Finding `type`/`literal` menunjuk field body; grup mencegah finding pada `status` di body
 // menyembunyikan `status` yang cocok di query.
@@ -22,7 +22,7 @@ const GROUP: Record<FindingSource, 'query' | 'body' | 'response' | 'changelog'> 
 export function matchedFields(
   calls: readonly ApiCall[],
   endpoint: Pick<ChangedEndpoint, 'method' | 'path'>,
-  specs: { readonly base: Record<string, unknown>; readonly head: Record<string, unknown> },
+  specs: Specs,
 ): string[] {
   const head = readOperation(specs.head, endpoint);
   if (!head) return [];

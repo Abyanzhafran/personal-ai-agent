@@ -10,7 +10,9 @@ describe('readOperation', () => {
       paths: {
         '/orders': {
           get: {
-            parameters: [{ name: 'limit', in: 'query' }],
+            parameters: [
+              { name: 'limit', in: 'query', required: true, schema: { type: 'integer' } },
+            ],
             requestBody: json({
               type: 'object',
               required: ['sku'],
@@ -26,7 +28,7 @@ describe('readOperation', () => {
 
     const facts = readOperation(spec, target);
 
-    expect([...(facts?.query ?? [])]).toEqual(['limit']);
+    expect([...(facts?.query ?? [])]).toEqual([['limit', { type: 'integer', required: true }]]);
     expect([...(facts?.body ?? [])]).toEqual([
       ['sku', { type: 'string', required: true }],
       ['status', { type: 'string', enum: ['a', 'b'], required: false }],
@@ -59,7 +61,7 @@ describe('readOperation', () => {
 
     const facts = readOperation(spec, target);
 
-    expect([...(facts?.query ?? [])]).toEqual(['page']);
+    expect([...(facts?.query.keys() ?? [])]).toEqual(['page']);
     expect(facts?.body.get('note')?.type).toBe('string');
     expect(facts?.response.get('total')?.type).toBe('integer');
   });
@@ -77,7 +79,7 @@ describe('readOperation', () => {
       },
     };
 
-    expect([...(readOperation(spec, target)?.query ?? [])]).toEqual(['tenant', 'page']);
+    expect([...(readOperation(spec, target)?.query.keys() ?? [])]).toEqual(['tenant', 'page']);
     expect(
       readOperation(
         {

@@ -18,7 +18,7 @@ export interface SeverityFinding {
   readonly line: number | null;
 }
 
-interface Specs {
+export interface Specs {
   readonly base: Record<string, unknown>;
   readonly head: Record<string, unknown>;
 }

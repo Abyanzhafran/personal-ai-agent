@@ -7,9 +7,9 @@ export interface PropertyFacts {
   readonly required: boolean;
 }
 
-/** Yang diperlukan mesin severity dari satu operasi: nama parameter query dan properti tingkat atas. */
+/** Yang diperlukan mesin severity dari satu operasi: parameter query dan properti tingkat atas. */
 export interface OperationFacts {
-  readonly query: ReadonlySet<string>;
+  readonly query: ReadonlyMap<string, PropertyFacts>;
   readonly body: ReadonlyMap<string, PropertyFacts>;
   readonly response: ReadonlyMap<string, PropertyFacts>;
 }
@@ -40,6 +40,17 @@ function jsonSchema(spec: Json, container: Json | undefined): unknown {
   return mediaType === undefined ? undefined : resolve(spec, content[mediaType])?.['schema'];
 }
 
+function propertyFacts(spec: Json, schema: unknown, required: boolean): PropertyFacts {
+  const property = resolve(spec, schema);
+  const type = property?.['type'];
+  const values = property?.['enum'];
+  return {
+    ...(typeof type === 'string' ? { type } : {}),
+    ...(Array.isArray(values) ? { enum: values } : {}),
+    required,
+  };
+}
+
 /** Properti tingkat atas; skema array dibuka satu tingkat (isi `items`). */
 function properties(spec: Json, schema: unknown): Map<string, PropertyFacts> {
   let target = resolve(spec, schema);
@@ -49,14 +60,7 @@ function properties(spec: Json, schema: unknown): Map<string, PropertyFacts> {
   const props = target?.['properties'];
   if (!isObject(props)) return result;
   for (const [name, raw] of Object.entries(props)) {
-    const property = resolve(spec, raw);
-    const type = property?.['type'];
-    const values = property?.['enum'];
-    result.set(name, {
-      ...(typeof type === 'string' ? { type } : {}),
-      ...(Array.isArray(values) ? { enum: values } : {}),
-      required: required.has(name),
-    });
+    result.set(name, propertyFacts(spec, raw, required.has(name)));
   }
   return result;
 }
@@ -75,13 +79,16 @@ export function readOperation(
   const operation = resolve(spec, item?.[method.toLowerCase()]);
   if (!operation) return undefined;
 
-  const query = new Set<string>();
+  const query = new Map<string, PropertyFacts>();
   const declared = [item?.['parameters'], operation['parameters']];
   for (const list of declared) {
     for (const raw of Array.isArray(list) ? list : []) {
       const parameter = resolve(spec, raw);
       if (parameter?.['in'] === 'query' && typeof parameter['name'] === 'string') {
-        query.add(parameter['name']);
+        query.set(
+          parameter['name'],
+          propertyFacts(spec, parameter['schema'], parameter['required'] === true),
+        );
       }
     }
   }
