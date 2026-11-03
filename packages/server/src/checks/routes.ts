@@ -4,7 +4,11 @@ import type { Db } from '../db/database.js';
 import { OasdiffUnavailableError } from '../diff/oasdiff.js';
 import { HttpError } from '../http/errors.js';
 import { validated } from '../http/validate.js';
-import { CheckAlreadyRunningError, type CheckRunner } from '../runner/check.js';
+import {
+  CheckAlreadyRunningError,
+  CheckNotRunningError,
+  type CheckRunner,
+} from '../runner/check.js';
 import { createRepoRepository } from '../repos/repository.js';
 import { createCheckRepository } from './repository.js';
 
@@ -13,7 +17,7 @@ const HEARTBEAT_MS = 15_000;
 
 export interface CheckRouteDeps {
   readonly db: Db;
-  readonly checks: Pick<CheckRunner, 'start' | 'events'>;
+  readonly checks: Pick<CheckRunner, 'start' | 'events' | 'cancel'>;
   readonly heartbeatMs?: number;
 }
 
@@ -53,6 +57,28 @@ export function checkRoutes({
           }
           if (error instanceof OasdiffUnavailableError) {
             throw new HttpError(503, ERROR_CODES.oasdiff_unavailable, error.message);
+          }
+          throw error;
+        }
+      }),
+    );
+
+    // Membatalkan menunggu statusnya tertulis, jadi balasannya sudah `cancelled` (CC-062).
+    api.post(
+      '/checks/:id/cancel',
+      validated({ params: CheckIdParams }, async ({ params }, _req, res) => {
+        if (!checkRows.get(params.id)) {
+          throw new HttpError(404, ERROR_CODES.check_not_found, 'Check tidak ditemukan');
+        }
+        try {
+          res.json(await checks.cancel(params.id));
+        } catch (error) {
+          if (error instanceof CheckNotRunningError) {
+            throw new HttpError(
+              409,
+              ERROR_CODES.check_not_running,
+              'Check ini sudah selesai atau tidak sedang berjalan, jadi tidak bisa dibatalkan',
+            );
           }
           throw error;
         }

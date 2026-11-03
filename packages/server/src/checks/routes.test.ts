@@ -10,7 +10,11 @@ import { createApp } from '../http/app.js';
 import { createLogger } from '../logger.js';
 import { createProjectRepository } from '../projects/repository.js';
 import { createRepoRepository } from '../repos/repository.js';
-import { CheckAlreadyRunningError, type StartCheckInput } from '../runner/check.js';
+import {
+  CheckAlreadyRunningError,
+  CheckNotRunningError,
+  type StartCheckInput,
+} from '../runner/check.js';
 import { createCheckEvents } from '../runner/events.js';
 import { createCheckRepository } from './repository.js';
 import { checkRoutes } from './routes.js';
@@ -19,6 +23,7 @@ let db: Db;
 let provider: Repo;
 let app: ReturnType<typeof createApp>;
 const start = vi.fn<(input: StartCheckInput) => Promise<Check>>();
+const cancel = vi.fn<(checkId: number) => Promise<Check>>();
 let events: ReturnType<typeof createCheckEvents>;
 let servers: http.Server[] = [];
 
@@ -54,10 +59,11 @@ beforeEach(() => {
   });
   provider = (created as { repo: Repo }).repo;
   start.mockReset();
+  cancel.mockReset();
   events = createCheckEvents();
   app = createApp({
     logger: createLogger({ level: 'silent' }),
-    registerRoutes: checkRoutes({ db, checks: { start, events } }),
+    registerRoutes: checkRoutes({ db, checks: { start, events, cancel } }),
   });
 });
 
@@ -154,7 +160,7 @@ async function serve(heartbeatMs?: number): Promise<string> {
     logger: createLogger({ level: 'silent' }),
     registerRoutes: checkRoutes({
       db,
-      checks: { start, events },
+      checks: { start, events, cancel },
       ...(heartbeatMs === undefined ? {} : { heartbeatMs }),
     }),
   });
@@ -320,5 +326,41 @@ describe('GET /api/checks/:id/events', () => {
     const invalid = await request(app).get('/api/checks/abc/events');
     expect(invalid.status).toBe(400);
     expect(errorOf(invalid.body).code).toBe('validation_failed');
+  });
+});
+
+describe('POST /api/checks/:id/cancel', () => {
+  it('check berjalan → 200 dengan baris check yang sudah cancelled', async () => {
+    const check = newCheck();
+    cancel.mockResolvedValue({
+      ...check,
+      status: 'cancelled',
+      finished_at: '2026-11-03T13:50:00.000Z',
+    });
+
+    const res = await request(app).post(`/api/checks/${check.id}/cancel`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: check.id, status: 'cancelled' });
+    expect(cancel).toHaveBeenCalledWith(check.id);
+  });
+
+  it('check yang sudah selesai atau tidak berjalan → 409 check_not_running, bukan 500', async () => {
+    const check = newCheck();
+    cancel.mockRejectedValue(new CheckNotRunningError(check.id));
+
+    const res = await request(app).post(`/api/checks/${check.id}/cancel`);
+
+    expect(res.status).toBe(409);
+    expect(errorOf(res.body).code).toBe('check_not_running');
+  });
+
+  it('check tidak ada → 404 check_not_found tanpa memanggil runner; id bukan angka → 400', async () => {
+    const missing = await request(app).post('/api/checks/999/cancel');
+    expect(missing.status).toBe(404);
+    expect(errorOf(missing.body).code).toBe('check_not_found');
+    expect(cancel).not.toHaveBeenCalled();
+
+    expect((await request(app).post('/api/checks/abc/cancel')).status).toBe(400);
   });
 });

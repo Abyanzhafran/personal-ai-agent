@@ -136,6 +136,14 @@ describe('startApp', () => {
     expect(((await events.json()) as { error: { code: string } }).error.code).toBe(
       'check_not_found',
     );
+
+    const cancel = await fetch(`http://127.0.0.1:${app.port}/api/checks/999/cancel`, {
+      method: 'POST',
+    });
+    expect(cancel.status).toBe(404);
+    expect(((await cancel.json()) as { error: { code: string } }).error.code).toBe(
+      'check_not_found',
+    );
   });
 
   describe('cek oasdiff saat start (CC-034)', () => {
