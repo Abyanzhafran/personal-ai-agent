@@ -1,0 +1,30 @@
+Contract Check #128 · svc-order
+Base: main (merge-base a1b2c3d)
+Head: feature/xyz @ 9f8e7d6
+
+3 break · 2 warn · 1 info · 1 endpoint tanpa consumer
+12 file diperiksa di 3 repo (1 via hop 2)
+
+GET /orders
+- BREAK removed — microfrontend-dashboard src/api/orders.ts:42 (keyakinan tinggi)
+  Consumer mengirim query page_size, yang sudah dihapus dari provider (head). Kemungkinan diganti limit (saran heuristik, bukan hasil diff).
+- BREAK removed — microfrontend-dashboard src/pages/OrdersPage.tsx:88 (via hop 2: useOrders, keyakinan tinggi)
+  Field response total dihapus di feature/xyz, tapi consumer masih membacanya.
+
+POST /orders
+- BREAK required_added — svc-payment internal/clients/order_client.go:63 (keyakinan sedang)
+  Field request currency kini required, tapi consumer tidak mengirimnya; request akan ditolak.
+- WARN param_mismatch — svc-payment internal/clients/order_client.go:66 (keyakinan tinggi)
+  Consumer mengirim note yang tidak ada di spec head; provider akan mengabaikannya.
+
+GET /orders/{param}
+- WARN type_changed — microfrontend-dashboard src/components/OrderSummary.tsx:31 (keyakinan rendah)
+  Field response grand_total berubah tipe number → string; consumer memformatnya sebagai angka.
+- INFO type_changed — microfrontend-dashboard src/components/OrderLines.tsx:18 (keyakinan tinggi)
+  Field response quantity melebar dari integer ke number; kompatibel dengan cara consumer membacanya.
+
+Tanpa consumer (1):
+- POST /orders/{param}/cancel
+  Tidak ketemu bukan berarti aman: pemanggil dinamis, consumer di luar project, atau komunikasi async tidak terlihat oleh tool ini.
+
+Consumer (default branch): microfrontend-dashboard @ 7c4d2e1, svc-payment @ 3b9a0f8, svc-inventory @ e5f6a7b
