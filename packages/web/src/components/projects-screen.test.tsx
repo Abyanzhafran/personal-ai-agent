@@ -1,33 +1,8 @@
 import type { Project, ProjectRepo } from '@cc/shared';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createQueryClient } from '../lib/query-client';
-import { createAppRouter } from '../router';
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-
-const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
-
-/**
- * Menjawab `fetch` menurut "METODE /path"; rute yang tidak terdaftar dijawab 404. Rute yang
- * mengembalikan `Response` (galat) atau promise-nya (jawaban yang ditahan) dipakai apa adanya.
- */
-function serve(routes: Record<string, () => unknown>) {
-  fetchMock.mockImplementation((url, init) => {
-    const method = init?.method ?? 'GET';
-    const body = routes[`${method} ${url}`]?.();
-    if (body instanceof Response || body instanceof Promise) return Promise.resolve(body);
-    return Promise.resolve(
-      body === undefined
-        ? json({ error: { code: 'tidak_ada', message: 'Tidak ada', details: null } }, 404)
-        : json(body, method === 'POST' ? 202 : 200),
-    );
-  });
-}
+import { fetchMock, json, project, renderAt, repo, serve } from '../test-utils';
 
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
@@ -36,26 +11,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   fetchMock.mockReset();
-});
-
-const project = (id: number, name: string): Project => ({
-  id,
-  name,
-  slug: name.toLowerCase(),
-  description: null,
-});
-
-const repo = (fields: Partial<ProjectRepo> & Pick<ProjectRepo, 'id' | 'name'>): ProjectRepo => ({
-  project_id: 1,
-  role: 'service',
-  local_path: `/work/${fields.name}`,
-  default_branch: 'main',
-  spec_path: null,
-  spec_cmd: null,
-  profile_status: 'not_scanned',
-  profile_error: null,
-  last_fetch_at: null,
-  ...fields,
 });
 
 const PROJECTS = [project(1, 'Order Platform'), project(2, 'Billing')];
@@ -72,15 +27,6 @@ const REPOS = [
   repo({ id: 14, name: 'e2e-suite', role: 'e2e', profile_status: 'skipped' }),
   repo({ id: 15, name: 'svc-new' }),
 ];
-
-function renderAt(path: string) {
-  const router = createAppRouter({ history: createMemoryHistory({ initialEntries: [path] }) });
-  render(
-    <QueryClientProvider client={createQueryClient()}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-}
 
 const scanning = () => ({ status: 'scanning', error: null, profile: null });
 

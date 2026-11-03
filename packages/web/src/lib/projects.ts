@@ -51,6 +51,41 @@ export const useCreateRepo = (projectId: number) =>
     invalidates: [['projects', projectId]],
   });
 
+export const useRepo = (repoId: number) =>
+  useQuery({
+    queryKey: ['repos', repoId],
+    queryFn: () => apiFetch(`/api/repos/${repoId}`, Repo),
+  });
+
+export const useRepoProfile = (repoId: number) =>
+  useQuery({
+    queryKey: ['repos', repoId, 'profile'],
+    queryFn: () => apiFetch(`/api/repos/${repoId}/profile`, RepoProfileResponse),
+    refetchInterval: (query) => (query.state.data?.status === 'scanning' ? SCAN_POLL_MS : false),
+  });
+
+/** Pindai ulang satu repo (202); hasilnya dipantau lewat `useRepoProfile`. */
+export const useRescan = (repo: Repo) =>
+  useApiMutation({
+    mutationFn: () =>
+      apiFetch(`/api/repos/${repo.id}/discovery`, RepoProfileResponse, { method: 'POST' }),
+    invalidates: [
+      ['repos', repo.id],
+      ['projects', repo.project_id, 'repos'],
+    ],
+  });
+
+/** `spec_cmd` null mengosongkan perintah; `apply_spec_path` menyalin `spec_path` draf ke repo. */
+export const useApproveProfile = (repo: Repo) =>
+  useApiMutation({
+    mutationFn: (body: { profile_md: string; apply_spec_path: boolean; spec_cmd: string | null }) =>
+      apiFetch(`/api/repos/${repo.id}/profile`, RepoProfileResponse, { method: 'PUT', body }),
+    invalidates: [
+      ['repos', repo.id],
+      ['projects', repo.project_id],
+    ],
+  });
+
 /** Memulai discovery untuk repo yang diberikan; server membalas 202 dan memindai di latar belakang. */
 export const useRunDiscovery = (projectId: number) =>
   useApiMutation({

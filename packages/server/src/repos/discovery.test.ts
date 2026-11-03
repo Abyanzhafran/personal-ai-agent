@@ -243,6 +243,22 @@ describe('discovery otomatis setelah POST /api/projects/:id/repos', () => {
   });
 });
 
+describe('GET /api/repos/:id', () => {
+  it('mengembalikan repo itu (termasuk project_id); id tidak ada → 404, bukan angka → 400', async () => {
+    const project = await newProject();
+    const created = (await addRepo(project.id, 'svc-order', 'service')).body as Repo;
+
+    const found = await request(app).get(`/api/repos/${created.id}`);
+    expect(found.status).toBe(200);
+    expect(found.body).toMatchObject({ id: created.id, project_id: project.id, name: 'svc-order' });
+
+    const missing = await request(app).get('/api/repos/999');
+    expect(missing.status).toBe(404);
+    expect(errorOf(missing.body).code).toBe('repo_not_found');
+    expect((await request(app).get('/api/repos/abc')).status).toBe(400);
+  });
+});
+
 describe('GET /api/projects/:id/repos', () => {
   const list = (projectId: number | string) => request(app).get(`/api/projects/${projectId}/repos`);
   const statuses = async (projectId: number) =>

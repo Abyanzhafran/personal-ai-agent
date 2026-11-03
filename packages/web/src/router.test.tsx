@@ -21,9 +21,8 @@ function renderAt(path: string) {
 const screenRoute = async () => (await screen.findByTestId('screen')).getAttribute('data-route');
 
 describe('rute', () => {
-  // `/` dan `/projects/:id` sudah layar sungguhan: lihat components/projects-screen.test.tsx.
+  // `/`, `/projects/:id`, dan `/repos/:id/discovery` sudah layar sungguhan: lihat components/*-screen.test.tsx.
   it.each([
-    ['/repos/12/discovery', '/repos/$repoId/discovery', '{"repoId":"12"}'],
     ['/checks', '/checks', null],
     ['/checks/42', '/checks/$checkId', '{"checkId":"42"}'],
     ['/panduan', '/panduan', null],

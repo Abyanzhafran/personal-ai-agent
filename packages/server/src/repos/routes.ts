@@ -203,6 +203,15 @@ export function repoRoutes({
       ),
     );
 
+    api.get(
+      '/repos/:id',
+      validated({ params: RepoIdParams }, ({ params }, _req, res) => {
+        const repo = repos.get(params.id);
+        if (!repo) throw repoNotFound();
+        res.json(repo);
+      }),
+    );
+
     api.patch(
       '/repos/:id',
       validated(

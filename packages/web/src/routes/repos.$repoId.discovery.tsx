@@ -1,14 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { PlaceholderScreen } from '../components/PlaceholderScreen';
+import { DiscoveryScreen } from '../components/discovery-screen';
 
 export const Route = createFileRoute('/repos/$repoId/discovery')({
   staticData: {
     crumbs: () => [{ label: 'nav.projects', to: '/' }, { label: 'breadcrumb.discovery' }],
   },
-  component: DiscoveryScreen,
+  component: DiscoveryRoute,
 });
 
-function DiscoveryScreen() {
+function DiscoveryRoute() {
   const { repoId } = Route.useParams();
-  return <PlaceholderScreen route="/repos/$repoId/discovery" params={{ repoId }} />;
+  return <DiscoveryScreen repoId={Number(repoId)} />;
 }
