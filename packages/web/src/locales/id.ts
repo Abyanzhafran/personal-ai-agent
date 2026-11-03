@@ -77,6 +77,54 @@ export const id = {
   'repos.profile.scanning': 'Sedang dipindai',
   'repos.profile.skipped': 'Tidak dipindai',
   'repos.review': 'Tinjau profil {name}',
+  // Panduan: `kode` dan **tebal** di dalam teks dirender oleh Rich di guide-screen.tsx.
+  'guide.title': 'Contract Check',
+  'guide.subtitle':
+    'Tahu sebelum deploy: perubahan API mana yang merusak repo lain, siapa yang terdampak, di file dan baris berapa.',
+  'guide.without.title': 'Tanpa tool ini',
+  'guide.without.badge': 'Ketahuan setelah deploy',
+  'guide.without.mon.day': 'Senin',
+  'guide.without.mon.repo': 'svc-order',
+  'guide.without.mon.text':
+    'Dev A merge `feature/xyz`: hapus `total` dan ganti `page_size` → `limit` di `GET /orders`. Reviewer hanya melihat repo ini.',
+  'guide.without.tue.day': 'Selasa',
+  'guide.without.tue.repo': 'microfrontend-dashboard',
+  'guide.without.tue.text':
+    'Dev B tidak tahu. Kode masih mengirim `page_size` dan membaca `data.total`.',
+  'guide.without.wed.day': 'Rabu',
+  'guide.without.wed.repo': 'SIT',
+  'guide.without.wed.text':
+    'Deploy, lalu e2e gagal: `element not found: order-total`. Gejalanya kabur dan sudah terlambat.',
+  'guide.with.title': 'Dengan Contract Check',
+  'guide.with.badge': 'Sebelum merge',
+  'guide.with.day': 'Senin',
+  'guide.with.repo': 'svc-order',
+  'guide.with.run':
+    'Dev A menekan **Jalankan check** untuk `main` → `feature/xyz`. Selesai 48 detik, 11 file di 3 repo diperiksa.',
+  'guide.with.break': 'Break',
+  'guide.with.endpoint': 'GET /orders',
+  'guide.with.sent.text': 'consumer mengirim `page_size` yang sudah dihapus',
+  'guide.with.sent.at': 'microfrontend-dashboard · src/api/orders.ts:42',
+  'guide.with.read.text': 'consumer membaca `total` yang sudah dihapus',
+  'guide.with.read.at': 'microfrontend-dashboard · src/pages/OrdersPage.tsx:88',
+  'guide.with.fix': 'Dev A memperbaiki, atau mengabari Dev B, sebelum merge.',
+  'guide.steps.title': 'Cara pakai',
+  'guide.step.register.title': 'Daftarkan project',
+  'guide.step.register.body':
+    'Buat project, lalu tambah repo lokal: path, peran (service, microfrontend, e2e), default branch. Sekali per project.',
+  'guide.step.register.open': 'Buka Projects',
+  'guide.step.review.title': 'Tinjau profil repo',
+  'guide.step.review.body':
+    'Claude memindai tiap repo sekali. Anda setujui atau edit profilnya; spec otomatis terisi.',
+  'guide.step.run.title': 'Jalankan check',
+  'guide.step.run.body':
+    'Pilih project, provider, base ref dan head ref. Tool hanya membaca repo, tanpa checkout.',
+  'guide.step.run.open': 'Buka Checks',
+  'guide.step.read.title': 'Baca laporan',
+  'guide.step.read.body':
+    'Per endpoint: apa yang berubah, consumer yang terdampak, file dan baris, plus cuplikan kodenya.',
+  'guide.note':
+    'Tool tidak mengubah repo apa pun (hanya `git show` dan `git grep`). Claude dipakai di dua tempat saja: memindai repo sekali dan membaca pemakaian API di consumer. Perbandingannya selalu deterministik.',
   'api.network': 'Tidak dapat terhubung ke server. Periksa apakah aplikasi masih berjalan.',
   'api.unexpected': 'Server mengirim respons yang tidak terduga.',
 };
