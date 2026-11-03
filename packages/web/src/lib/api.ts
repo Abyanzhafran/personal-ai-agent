@@ -36,7 +36,7 @@ export class ResponseShapeError extends Error {
 }
 
 interface Options {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
 }
 
@@ -74,6 +74,13 @@ export async function apiFetch<T>(
   const parsed = schema.safeParse(data);
   if (!parsed.success) throw new ResponseShapeError(method, path, parsed.error.issues);
   return parsed.data;
+}
+
+/** Pesan server untuk satu isian body (`path`); undefined bila galat ini tidak menunjuk isian itu. */
+export function fieldError(error: unknown, path: string): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const details = ValidationDetails.safeParse(error.details);
+  return details.success ? details.data.fields.find((f) => f.path === path)?.message : undefined;
 }
 
 /**

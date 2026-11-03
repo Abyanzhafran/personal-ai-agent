@@ -55,12 +55,9 @@ export function projectRoutes({ db, workspace }: ProjectRouteDeps): (api: Router
           description: body.description ?? null,
         });
         if (!project) {
-          throw new HttpError(
-            409,
-            ERROR_CODES.project_slug_taken,
-            `Sudah ada project dengan nama serupa (folder "${slug}"). Pakai nama lain.`,
-            { slug },
-          );
+          const message = `Sudah ada project dengan nama serupa (folder "${slug}"). Pakai nama lain.`;
+          const fields: ValidationDetails['fields'] = [{ in: 'body', path: 'name', message }];
+          throw new HttpError(409, ERROR_CODES.project_slug_taken, message, { slug, fields });
         }
         res.status(201).json(project);
       }),

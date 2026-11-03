@@ -6,6 +6,7 @@ import {
   ProjectIdParams,
   RepoIdParams,
   UpdateRepoRequest,
+  type ProjectRepo,
   type Repo,
   type RepoRef,
   type ValidationDetails,
@@ -150,6 +151,17 @@ export function repoRoutes({
   }
 
   return (api) => {
+    api.get(
+      '/projects/:id/repos',
+      validated({ params: ProjectIdParams }, ({ params }, _req, res) => {
+        if (!projects.get(params.id)) throw projectNotFound();
+        const list: ProjectRepo[] = repos
+          .listByProject(params.id)
+          .map((repo) => ({ ...repo, profile_status: discovery.status(repo) }));
+        res.json(list);
+      }),
+    );
+
     api.post(
       '/projects/:id/repos',
       validated(
@@ -189,6 +201,15 @@ export function repoRoutes({
           res.status(201).json(result.repo);
         },
       ),
+    );
+
+    api.get(
+      '/repos/:id',
+      validated({ params: RepoIdParams }, ({ params }, _req, res) => {
+        const repo = repos.get(params.id);
+        if (!repo) throw repoNotFound();
+        res.json(repo);
+      }),
     );
 
     api.patch(

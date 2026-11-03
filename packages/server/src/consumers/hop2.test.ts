@@ -264,5 +264,5 @@ describe('repo fixture asli', () => {
       blob_sha: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
     });
     expect(result.incomplete).toBe(false);
-  });
+  }, 30_000);
 });

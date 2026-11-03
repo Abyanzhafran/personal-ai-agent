@@ -21,10 +21,8 @@ function renderAt(path: string) {
 const screenRoute = async () => (await screen.findByTestId('screen')).getAttribute('data-route');
 
 describe('rute', () => {
+  // `/`, `/projects/:id`, dan `/repos/:id/discovery` sudah layar sungguhan: lihat components/*-screen.test.tsx.
   it.each([
-    ['/', '/', null],
-    ['/projects/7', '/projects/$projectId', '{"projectId":"7"}'],
-    ['/repos/12/discovery', '/repos/$repoId/discovery', '{"repoId":"12"}'],
     ['/checks', '/checks', null],
     ['/checks/42', '/checks/$checkId', '{"checkId":"42"}'],
     ['/panduan', '/panduan', null],
@@ -49,8 +47,8 @@ describe('rute', () => {
 
 describe('navigasi', () => {
   it('berpindah rute tanpa memuat ulang halaman: shell tetap objek DOM yang sama', async () => {
-    const router = renderAt('/');
-    expect(await screenRoute()).toBe('/');
+    const router = renderAt('/panduan');
+    expect(await screenRoute()).toBe('/panduan');
     const nav = screen.getByTestId('nav');
 
     await userEvent.click(screen.getByRole('link', { name: 'Checks' }));
@@ -58,13 +56,13 @@ describe('navigasi', () => {
     expect(await screenRoute()).toBe('/checks');
     expect(screen.getByTestId('nav')).toBe(nav);
 
-    await router.navigate({ to: '/panduan' });
-    expect(await screenRoute()).toBe('/panduan');
+    await router.navigate({ to: '/checks/$checkId', params: { checkId: '5' } });
+    expect(await screenRoute()).toBe('/checks/$checkId');
     expect(screen.getByTestId('nav')).toBe(nav);
   });
 
   it('klik link dicegat router (preventDefault), sehingga browser tidak memuat halaman baru', async () => {
-    renderAt('/');
+    renderAt('/panduan');
     await screenRoute();
     const link = screen.getByRole('link', { name: 'Checks' });
     // fireEvent.click mengembalikan false bila ada handler yang memanggil preventDefault().
@@ -72,7 +70,7 @@ describe('navigasi', () => {
   });
 
   it('navigasi programatik membawa parameter', async () => {
-    const router = renderAt('/');
+    const router = renderAt('/panduan');
     await screenRoute();
     await router.navigate({ to: '/checks/$checkId', params: { checkId: '99' } });
     expect(await screenRoute()).toBe('/checks/$checkId');

@@ -1,11 +1,18 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../lib/query-client';
 import { createAppRouter } from '../router';
 
-afterEach(cleanup);
+// Layar Projects memuat daftar project; di sini tidak ada project.
+beforeEach(() => {
+  vi.stubGlobal('fetch', () => Promise.resolve(new Response('[]')));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function renderAt(path: string) {
   const router = createAppRouter({ history: createMemoryHistory({ initialEntries: [path] }) });

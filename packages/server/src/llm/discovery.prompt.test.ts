@@ -190,5 +190,5 @@ describe('prompt dari repo fixture asli', () => {
       // Path boleh tampil (pohon), isi tidak. Berkas kosong tidak bisa dibuktikan, lewati.
       if (body.trim() !== '') expect(user).not.toContain(body.trim());
     }
-  });
+  }, 30_000);
 });

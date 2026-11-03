@@ -1,7 +1,7 @@
 import { HealthResponse } from '@cc/shared';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, ResponseShapeError, apiFetch, reportError } from './api';
+import { ApiError, ResponseShapeError, apiFetch, fieldError, reportError } from './api';
 import { createQueryClient } from './query-client';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
@@ -130,5 +130,26 @@ describe('createQueryClient', () => {
     expect(queryFn).toHaveBeenCalledTimes(2);
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalledWith('Galat server');
+  });
+});
+
+describe('fieldError', () => {
+  const fields = [
+    { in: 'body', path: 'name', message: 'Nama sudah dipakai' },
+    { in: 'body', path: 'description', message: 'Terlalu panjang' },
+  ];
+
+  it('mengambil pesan untuk isian yang ditunjuk, apa pun detail lain di galat itu', () => {
+    const error = new ApiError(409, 'project_slug_taken', 'Bentrok', { slug: 'order', fields });
+    expect(fieldError(error, 'name')).toBe('Nama sudah dipakai');
+    expect(fieldError(error, 'description')).toBe('Terlalu panjang');
+  });
+
+  it('undefined bila isian tidak ditunjuk, galat tanpa details.fields, atau bukan ApiError', () => {
+    expect(fieldError(new ApiError(409, 'x', 'Bentrok', { fields }), 'role')).toBeUndefined();
+    expect(fieldError(new ApiError(500, 'x', 'Gagal', { slug: 'order' }), 'name')).toBeUndefined();
+    expect(fieldError(new ApiError(500, 'x', 'Gagal'), 'name')).toBeUndefined();
+    expect(fieldError(new Error('x'), 'name')).toBeUndefined();
+    expect(fieldError(null, 'name')).toBeUndefined();
   });
 });

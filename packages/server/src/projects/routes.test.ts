@@ -96,7 +96,12 @@ describe('POST /api/projects', () => {
       code: 'project_slug_taken',
       details: { slug: 'order-service' },
     });
-    expect(errorOf(res.body).message).toContain('order-service');
+    const { message, details } = errorOf(res.body);
+    expect(message).toContain('order-service');
+    // Pesan yang sama juga menunjuk field name, supaya dialog menampilkannya di bawah field itu.
+    expect(ValidationDetails.parse(details).fields).toEqual([
+      { in: 'body', path: 'name', message },
+    ]);
     expect(count('projects')).toBe(1);
   });
 

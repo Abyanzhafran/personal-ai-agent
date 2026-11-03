@@ -38,6 +38,7 @@ vi.setConfig({ testTimeout: 30_000 });
 const discovery: DiscoveryRunner = {
   isRunning: () => false,
   start: () => undefined,
+  status: (repo) => repo.profile_status,
   profile: () => Promise.reject(new Error('tidak dipakai di test ini')),
   approve: () => Promise.reject(new Error('tidak dipakai di test ini')),
   stop: () => Promise.resolve(),
