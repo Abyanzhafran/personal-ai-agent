@@ -84,6 +84,15 @@ export function createDiscoveryRunner({
     return (await workspace.readCache(file, (data) => RepoProfile.parse(data))) ?? null;
   }
 
+  /** Status tersimpan ditambah dua status turunan: `skipped` (e2e) dan `scanning` (job berjalan). */
+  function status(repo: Repo): RepoProfileResponse['status'] {
+    return repo.role === 'e2e'
+      ? 'skipped'
+      : running.has(repo.id)
+        ? 'scanning'
+        : repo.profile_status;
+  }
+
   return {
     isRunning: (repoId: number): boolean => running.has(repoId),
 
@@ -101,12 +110,12 @@ export function createDiscoveryRunner({
       running.set(repo.id, job);
     },
 
+    status,
+
     /** Isi `GET /api/repos/:id/profile`. */
     async profile(repo: Repo): Promise<RepoProfileResponse> {
-      const status =
-        repo.role === 'e2e' ? 'skipped' : running.has(repo.id) ? 'scanning' : repo.profile_status;
       return {
-        status,
+        status: status(repo),
         error: repo.profile_error,
         profile: repo.profile_status === 'not_scanned' ? null : await readDraft(repo),
       };

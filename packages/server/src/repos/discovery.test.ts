@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import {
   ApiErrorEnvelope,
+  ProjectRepo,
   RepoProfile,
   RepoProfileResponse,
   ValidationDetails,
@@ -239,6 +240,46 @@ describe('discovery otomatis setelah POST /api/projects/:id/repos', () => {
     const mfe = (await addRepo(project.id, 'mfe-dashboard', 'microfrontend')).body as Repo;
     await settled(mfe.id);
     expect(row(mfe.id)).toEqual({ profile_status: 'pending_review', profile_error: null });
+  });
+});
+
+describe('GET /api/projects/:id/repos', () => {
+  const list = (projectId: number | string) => request(app).get(`/api/projects/${projectId}/repos`);
+  const statuses = async (projectId: number) =>
+    ProjectRepo.array()
+      .parse((await list(projectId)).body)
+      .map((r) => [r.name, r.profile_status]);
+
+  it('mengembalikan repo project urut id dengan status turunan: scanning, pending_review, skipped', async () => {
+    const hold = gate();
+    callJson.mockImplementationOnce(hold.call);
+    const project = await newProject();
+    const service = (await addRepo(project.id, 'svc-order', 'service')).body as Repo;
+    await addRepo(project.id, 'e2e-suite', 'e2e');
+    const other = await newProject();
+    await addRepo(other.id, 'mfe-dashboard', 'microfrontend');
+
+    // Claude belum menjawab: DB masih `not_scanned`, daftar sudah menyebut `scanning`.
+    expect(await statuses(project.id)).toEqual([
+      ['svc-order', 'scanning'],
+      ['e2e-suite', 'skipped'],
+    ]);
+
+    hold.open();
+    await settled(service.id);
+    expect(await statuses(project.id)).toEqual([
+      ['svc-order', 'pending_review'],
+      ['e2e-suite', 'skipped'],
+    ]);
+  });
+
+  it('project tanpa repo → []; project yang tidak ada → 404 project_not_found', async () => {
+    const project = await newProject();
+    expect((await list(project.id)).body).toEqual([]);
+
+    const missing = await list(999);
+    expect(missing.status).toBe(404);
+    expect(errorOf(missing.body).code).toBe('project_not_found');
   });
 });
 

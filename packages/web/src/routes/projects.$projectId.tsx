@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { PlaceholderScreen } from '../components/PlaceholderScreen';
+import { ProjectsScreen } from '../components/projects-screen';
 
 export const Route = createFileRoute('/projects/$projectId')({
   staticData: { crumbs: () => [{ label: 'nav.projects', to: '/' }] },
@@ -8,5 +8,5 @@ export const Route = createFileRoute('/projects/$projectId')({
 
 function ProjectScreen() {
   const { projectId } = Route.useParams();
-  return <PlaceholderScreen route="/projects/$projectId" params={{ projectId }} />;
+  return <ProjectsScreen projectId={Number(projectId)} />;
 }

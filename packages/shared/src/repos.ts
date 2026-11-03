@@ -119,6 +119,13 @@ export type RepoProfile = z.infer<typeof RepoProfile>;
 export const REPO_PROFILE_STATUSES = [...PROFILE_STATUSES, 'scanning', 'skipped'] as const;
 
 /**
+ * Elemen `GET /api/projects/:id/repos` (CC-076): `Repo` dengan `profile_status` turunan (`scanning`,
+ * `skipped`) seperti di {@link RepoProfileResponse}, tanpa membaca draf.
+ */
+export const ProjectRepo = Repo.extend({ profile_status: z.enum(REPO_PROFILE_STATUSES) });
+export type ProjectRepo = z.infer<typeof ProjectRepo>;
+
+/**
  * `GET /api/repos/:id/profile`; `POST /api/repos/:id/discovery` membalas 202 dengan bentuk yang sama
  * (status `scanning`).
  */

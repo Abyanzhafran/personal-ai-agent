@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ApproveProfileRequest,
   CreateRepoRequest,
+  ProjectRepo,
   Repo,
   RepoFetchResult,
   RepoIdParams,
@@ -107,6 +108,37 @@ describe('Repo', () => {
     };
     expect(Repo.parse(row)).toEqual(row);
     expect(Repo.safeParse({ ...row, profile_status: 'scanning' }).success).toBe(false);
+  });
+});
+
+describe('ProjectRepo', () => {
+  const row = {
+    id: 1,
+    project_id: 2,
+    role: 'service',
+    name: 'svc-order',
+    local_path: '/r',
+    default_branch: 'main',
+    spec_path: null,
+    spec_cmd: null,
+    profile_status: 'scanning',
+    profile_error: null,
+    last_fetch_at: null,
+  };
+
+  it('profile_status menerima status turunan, bukan hanya nilai DB', () => {
+    for (const profile_status of [
+      'not_scanned',
+      'scanning',
+      'pending_review',
+      'approved',
+      'skipped',
+    ]) {
+      expect(ProjectRepo.parse({ ...row, profile_status })).toEqual({ ...row, profile_status });
+    }
+    expect(ProjectRepo.safeParse({ ...row, profile_status: 'sedang dipindai' }).success).toBe(
+      false,
+    );
   });
 });
 
