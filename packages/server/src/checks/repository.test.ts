@@ -5,22 +5,22 @@ import { migrate } from '../db/migrate.js';
 import { createCheckRepository, type CheckResult, type NewFinding } from './repository.js';
 
 let db: Db;
+let projectId: number;
+let providerId: number;
 let checkId: number;
 let consumerId: number;
 
 beforeEach(() => {
   db = openDatabase(':memory:');
   migrate(db);
-  const projectId = Number(
+  projectId = Number(
     db.prepare("INSERT INTO projects (name, slug) VALUES ('Order', 'order')").run().lastInsertRowid,
   );
   const insertRepo = db.prepare(
     `INSERT INTO repos (project_id, role, name, local_path, default_branch)
      VALUES (?, ?, ?, ?, 'main')`,
   );
-  const providerId = Number(
-    insertRepo.run(projectId, 'service', 'svc-order', '/r/svc').lastInsertRowid,
-  );
+  providerId = Number(insertRepo.run(projectId, 'service', 'svc-order', '/r/svc').lastInsertRowid);
   consumerId = Number(insertRepo.run(projectId, 'microfrontend', 'mfe', '/r/mfe').lastInsertRowid);
   checkId = Number(
     db
@@ -169,5 +169,69 @@ describe('saveResult', () => {
 
     expect(findingRows()).toHaveLength(0);
     expect(checkRow()).toEqual({ status: 'running', finished_at: null, summary_json: null });
+  });
+});
+
+describe('siklus baris check', () => {
+  const NEW = {
+    baseRef: 'main',
+    headRef: 'v1.2.0',
+    startedAt: '2026-11-03T01:00:00.000Z',
+  };
+
+  it('create: baris baru berstatus running tanpa SHA, galat, dan waktu selesai', () => {
+    const check = createCheckRepository(db).create({
+      projectId,
+      providerRepoId: providerId,
+      ...NEW,
+    });
+
+    expect(check).toEqual({
+      id: check.id,
+      project_id: projectId,
+      provider_repo_id: providerId,
+      base_ref: 'main',
+      head_ref: 'v1.2.0',
+      base_sha: null,
+      head_sha: null,
+      status: 'running',
+      started_at: NEW.startedAt,
+      finished_at: null,
+      error: null,
+    });
+    expect(createCheckRepository(db).get(check.id)).toEqual(check);
+    expect(createCheckRepository(db).get(check.id + 1)).toBeUndefined();
+  });
+
+  it('setShas lalu fail: SHA tetap tersimpan, status failed membawa alasan', () => {
+    const checks = createCheckRepository(db);
+    const { id } = checks.create({ projectId, providerRepoId: providerId, ...NEW });
+
+    checks.setShas(id, 'a'.repeat(40), 'b'.repeat(40));
+    checks.fail(id, 'origin/feature/old tidak ada', '2026-11-03T01:00:05.000Z');
+
+    expect(checks.get(id)).toMatchObject({
+      base_sha: 'a'.repeat(40),
+      head_sha: 'b'.repeat(40),
+      status: 'failed',
+      error: 'origin/feature/old tidak ada',
+      finished_at: '2026-11-03T01:00:05.000Z',
+    });
+  });
+
+  it('cancel: status cancelled tanpa galat dan tanpa finding', () => {
+    const checks = createCheckRepository(db);
+    const { id } = checks.create({ projectId, providerRepoId: providerId, ...NEW });
+
+    checks.cancel(id, '2026-11-03T01:00:09.000Z');
+
+    expect(checks.get(id)).toMatchObject({
+      status: 'cancelled',
+      error: null,
+      finished_at: '2026-11-03T01:00:09.000Z',
+    });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM findings WHERE check_id = ?').get(id)).toEqual({
+      n: 0,
+    });
   });
 });

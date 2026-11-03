@@ -1,5 +1,24 @@
-import { CheckSummary, type Confidence, type Kind, type Severity, type Snippet } from '@cc/shared';
+import {
+  CheckSummary,
+  type Check,
+  type Confidence,
+  type Kind,
+  type Severity,
+  type Snippet,
+} from '@cc/shared';
 import type { Db } from '../db/database.js';
+
+const COLUMNS =
+  'id, project_id, provider_repo_id, base_ref, head_ref, base_sha, head_sha, status, started_at, finished_at, error';
+
+export interface NewCheck {
+  projectId: number;
+  providerRepoId: number;
+  baseRef: string;
+  headRef: string;
+  /** ISO-8601 UTC. */
+  startedAt: string;
+}
 
 /** Satu baris `findings`. `endpoint` = `'METHOD path'`, atau `'spec'` untuk finding tingkat provider. */
 export interface NewFinding {
@@ -56,7 +75,44 @@ export function createCheckRepository(db: Db) {
     });
   });
 
+  const insertCheck = db.prepare(
+    `INSERT INTO checks (project_id, provider_repo_id, base_ref, head_ref, started_at)
+     VALUES (@projectId, @providerRepoId, @baseRef, @headRef, @startedAt)`,
+  );
+  const selectCheck = db.prepare(`SELECT ${COLUMNS} FROM checks WHERE id = ?`);
+  const updateShas = db.prepare('UPDATE checks SET base_sha = ?, head_sha = ? WHERE id = ?');
+  const endWith = db.prepare(
+    'UPDATE checks SET status = @status, error = @error, finished_at = @finishedAt WHERE id = @id',
+  );
+
+  function get(id: number): Check | undefined {
+    return selectCheck.get(id) as Check | undefined;
+  }
+
   return {
+    get,
+
+    /** Baris baru berstatus `running`. */
+    create(input: NewCheck): Check {
+      const { lastInsertRowid } = insertCheck.run(input);
+      return get(Number(lastInsertRowid)) as Check;
+    },
+
+    /** Hasil langkah 1; ditulis segera supaya check yang gagal sesudahnya tetap menyimpan SHA-nya. */
+    setShas(id: number, baseSha: string, headSha: string): void {
+      updateShas.run(baseSha, headSha, id);
+    },
+
+    /** Status `failed` dengan alasan satu pesan; tanpa finding. */
+    fail(id: number, error: string, finishedAt: string): void {
+      endWith.run({ id, status: 'failed', error, finishedAt });
+    },
+
+    /** Status `cancelled`; tanpa finding parsial. */
+    cancel(id: number, finishedAt: string): void {
+      endWith.run({ id, status: 'cancelled', error: null, finishedAt });
+    },
+
     /**
      * Menulis semua finding, `summary_json`, status akhir (`clean` bila tanpa finding, selain itu
      * `findings`), dan `finished_at` dalam satu transaksi: gagal di tengah = tidak ada yang tertulis.
