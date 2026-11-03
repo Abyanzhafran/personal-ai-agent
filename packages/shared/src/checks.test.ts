@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CheckSummary } from './checks.js';
+import { CheckSummary, CreateCheckRequest } from './checks.js';
 import { SEVERITIES } from './domain.js';
 
 const valid = {
@@ -50,5 +50,37 @@ describe('CheckSummary', () => {
     const rest: Record<string, unknown> = { ...valid };
     delete rest[key];
     expect(CheckSummary.safeParse(rest).success).toBe(false);
+  });
+});
+
+describe('CreateCheckRequest', () => {
+  it('base_ref kosong atau tidak dikirim berarti tidak diisi; head_ref di-trim', () => {
+    expect(CreateCheckRequest.parse({ provider_repo_id: 3, head_ref: ' feature/xyz ' })).toEqual({
+      provider_repo_id: 3,
+      head_ref: 'feature/xyz',
+    });
+    expect(
+      CreateCheckRequest.parse({ provider_repo_id: 3, head_ref: 'v1.2.0', base_ref: '  ' }),
+    ).toEqual({ provider_repo_id: 3, head_ref: 'v1.2.0', base_ref: undefined });
+    expect(
+      CreateCheckRequest.parse({ provider_repo_id: 3, head_ref: 'abc1234', base_ref: 'release' })
+        .base_ref,
+    ).toBe('release');
+  });
+
+  it.each<[string, unknown, string]>([
+    ['repo provider hilang', { head_ref: 'x' }, 'Repo provider wajib dipilih'],
+    [
+      'repo provider bukan bilangan bulat',
+      { provider_repo_id: 1.5, head_ref: 'x' },
+      'Repo provider tidak valid',
+    ],
+    ['head_ref kosong', { provider_repo_id: 1, head_ref: '  ' }, 'Ref head wajib diisi'],
+    ['head_ref hilang', { provider_repo_id: 1 }, 'Ref head wajib diisi'],
+    ['bukan objek', 'x', 'Body harus berupa objek JSON'],
+  ])('menolak %s dengan pesan Indonesia', (_name, body, message) => {
+    const result = CreateCheckRequest.safeParse(body);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(message);
   });
 });

@@ -39,6 +39,10 @@ export const ERROR_CODES = {
   discovery_not_applicable: 'discovery_not_applicable',
   /** `PUT /api/repos/:id/profile` sebelum ada draf discovery (409). */
   profile_not_ready: 'profile_not_ready',
+  /** Project sudah punya check berjalan (409). `details`: `{ project_id, check_id }`. */
+  check_already_running: 'check_already_running',
+  /** DELETE project atau repo selagi check berjalan memakainya (409). */
+  check_in_progress: 'check_in_progress',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */
