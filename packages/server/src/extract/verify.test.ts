@@ -150,6 +150,30 @@ describe('verifyExtraction', () => {
     expect(confidences(result)).toEqual(['high']);
   });
 
+  it('hop 2: baris yang memuat simbol pembungkus lolos, selain itu tetap low (D-42)', () => {
+    const hop2 = 'const rows = await useOrders();\n';
+    const calls = [call({ path: '/orders', line: 1 })];
+
+    expect(confidences(verifyExtraction(extraction(calls, { sent_lines: 1 }), hop2))).toEqual([
+      'low',
+    ]);
+    expect(
+      confidences(verifyExtraction(extraction(calls, { sent_lines: 1 }), hop2, ['useOrders'])),
+    ).toEqual(['high']);
+    expect(
+      confidences(verifyExtraction(extraction(calls, { sent_lines: 1 }), hop2, ['listAll'])),
+    ).toEqual(['low']);
+  });
+
+  it('hop 2: simbol tidak menolong baris di luar sent_lines', () => {
+    const hop2 = 'x\nconst rows = await useOrders();\n';
+    const calls = [call({ path: '/orders', line: 2 })];
+
+    expect(
+      confidences(verifyExtraction(extraction(calls, { sent_lines: 1 }), hop2, ['useOrders'])),
+    ).toEqual(['low']);
+  });
+
   it('tidak mengubah masukan dan hanya keyakinan yang berubah', () => {
     const original = extraction([call({ path: '/payments', line: lineOf('getOrder') })]);
     const result = verifyExtraction(original, content);
