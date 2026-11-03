@@ -1,6 +1,7 @@
 import { KINDS } from '@cc/shared';
 import { describe, expect, it } from 'vitest';
 import type { OasdiffChange } from '../diff/oasdiff.js';
+import { orderServiceSpec } from '../../../../fixtures/specs.js';
 import type { ApiCall } from '../llm/extraction.prompt.js';
 import { callFindings, changelogFindings, type SeverityFinding } from './severity.js';
 
@@ -242,6 +243,57 @@ describe('renamed bukan kind (keputusan #5)', () => {
     expect(findings.map((finding) => finding.kind)).toEqual(['removed']);
     for (const row of MATRIX) expect(KINDS).toContain(row.expected.kind);
     expect(KINDS).not.toContain('renamed');
+  });
+});
+
+describe('spec fixture CC-090 (base → head)', () => {
+  const specs = {
+    base: orderServiceSpec('base') as Record<string, unknown>,
+    head: orderServiceSpec('head') as Record<string, unknown>,
+  };
+  const summary = (usage: Partial<ApiCall>, target: { method: string; path: string }) =>
+    callFindings(call(usage), target, specs).map((f) => [f.kind, f.severity, f.name]);
+
+  it('GET /orders: page_size dan total dihapus', () => {
+    expect(
+      summary(
+        {
+          method: 'GET',
+          query_params: ['page_size', 'status'],
+          response_fields_read: [
+            { name: 'items', line: 9 },
+            { name: 'total', line: 10 },
+          ],
+        },
+        { method: 'GET', path: '/orders' },
+      ),
+    ).toEqual([
+      ['removed', 'break', 'page_size'],
+      ['removed', 'break', 'total'],
+    ]);
+  });
+
+  it('POST /orders: currency required baru, note tidak pernah ada di spec', () => {
+    expect(
+      summary(
+        {
+          body_fields: [field('customer_id', { type: 'string' }), field('items'), field('note')],
+        },
+        { method: 'POST', path: '/orders' },
+      ),
+    ).toEqual([
+      ['param_mismatch', 'warn', 'note'],
+      ['required_added', 'break', 'currency'],
+    ]);
+  });
+
+  it('GET /orders/{order_id}: grand_total number → string hanya warn', () => {
+    expect(
+      summary(
+        { method: 'GET', response_fields_read: [{ name: 'grand_total', line: 20 }] },
+        { method: 'GET', path: '/orders/{order_id}' },
+      ),
+    ).toEqual([['type_changed', 'warn', 'grand_total']]);
   });
 });
 
