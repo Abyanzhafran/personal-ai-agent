@@ -20,6 +20,7 @@
     "express": "^5.3.0",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
+    "swagger2openapi": "^7.0.8",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
@@ -27,6 +28,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/supertest": "^6.0.3",
+    "@types/swagger2openapi": "^7.0.4",
     "supertest": "^7.3.1"
   }
 }
