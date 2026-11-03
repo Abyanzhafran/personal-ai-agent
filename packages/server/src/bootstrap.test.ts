@@ -119,6 +119,33 @@ describe('startApp', () => {
     }
   });
 
+  it('memasang rute check: repo provider yang tidak ada → 404 repo_not_found', async () => {
+    app = await startApp(config(), { logger: silent() });
+
+    const res = await fetch(`http://127.0.0.1:${app.port}/api/checks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider_repo_id: 999, head_ref: 'feature/xyz' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('repo_not_found');
+
+    const events = await fetch(`http://127.0.0.1:${app.port}/api/checks/999/events`);
+    expect(events.status).toBe(404);
+    expect(((await events.json()) as { error: { code: string } }).error.code).toBe(
+      'check_not_found',
+    );
+
+    const cancel = await fetch(`http://127.0.0.1:${app.port}/api/checks/999/cancel`, {
+      method: 'POST',
+    });
+    expect(cancel.status).toBe(404);
+    expect(((await cancel.json()) as { error: { code: string } }).error.code).toBe(
+      'check_not_found',
+    );
+  });
+
   describe('cek oasdiff saat start (CC-034)', () => {
     const capture = () => {
       const lines: { level: number; msg: string }[] = [];
@@ -148,6 +175,37 @@ describe('startApp', () => {
       expect(warning?.msg).toContain('OASDIFF_BIN');
     });
 
+    it('tidak terpasang: POST /api/checks ditolak 503 dengan pesan cara pasang, tanpa baris check', async () => {
+      app = await startApp(config({ oasdiffBin: 'oasdiff-tidak-terpasang-xyz' }), {
+        logger: silent(),
+      });
+      const { db } = app.context;
+      const projectId = Number(
+        db.prepare("INSERT INTO projects (name, slug) VALUES ('Order', 'order')").run()
+          .lastInsertRowid,
+      );
+      const repoId = Number(
+        db
+          .prepare(
+            `INSERT INTO repos (project_id, role, name, local_path, default_branch)
+             VALUES (?, 'service', 'svc-order', ?, 'main')`,
+          )
+          .run(projectId, tmp).lastInsertRowid,
+      );
+
+      const res = await fetch(`http://127.0.0.1:${app.port}/api/checks`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider_repo_id: repoId, head_ref: 'feature/xyz' }),
+      });
+
+      expect(res.status).toBe(503);
+      const { error } = (await res.json()) as { error: { code: string; message: string } };
+      expect(error.code).toBe('oasdiff_unavailable');
+      expect(error.message).toContain('OASDIFF_BIN');
+      expect(db.prepare('SELECT COUNT(*) AS n FROM checks').get()).toEqual({ n: 0 });
+    });
+
     it('terpasang dengan versi memadai: dicatat sekali saat start', async () => {
       const { lines, logger } = capture();
       // `node` berpura-pura menjadi oasdiff: `--version` mencetak versinya.
@@ -159,6 +217,68 @@ describe('startApp', () => {
       });
       expect(lines.filter((line) => line.msg === 'oasdiff siap')).toHaveLength(1);
     });
+  });
+
+  it('pemulihan (CC-063): check yang tertinggal running → failed sebelum listen, project bisa menjalankan check baru', async () => {
+    app = await startApp(config(), { logger: silent() });
+    const { db, workspace } = app.context;
+    const projectId = Number(
+      db.prepare("INSERT INTO projects (name, slug) VALUES ('Order', 'order')").run()
+        .lastInsertRowid,
+    );
+    const repoId = Number(
+      db
+        .prepare(
+          `INSERT INTO repos (project_id, role, name, local_path, default_branch)
+           VALUES (?, 'service', 'svc-order', ?, 'main')`,
+        )
+        .run(projectId, tmp).lastInsertRowid,
+    );
+    const interrupted = Number(
+      db
+        .prepare(
+          `INSERT INTO checks (project_id, provider_repo_id, base_ref, head_ref, started_at)
+           VALUES (?, ?, 'main', 'feature/xyz', '2026-11-03T13:00:00.000Z')`,
+        )
+        .run(projectId, repoId).lastInsertRowid,
+    );
+    const orphan = path.join(workspace.layout.checkRunDir(interrupted), `wt-${'a'.repeat(40)}`);
+    await fs.mkdir(orphan, { recursive: true });
+    await app.close(); // proses "mati" di tengah check
+
+    const lines: { msg: string }[] = [];
+    const logger = createLogger({
+      level: 'info',
+      destination: { write: (line: string) => lines.push(JSON.parse(line) as { msg: string }) },
+    });
+    // `node` berpura-pura menjadi oasdiff supaya check baru bisa dimulai.
+    app = await startApp(config({ oasdiffBin: process.execPath }), { logger });
+
+    expect(
+      app.context.db.prepare('SELECT status, error FROM checks WHERE id = ?').get(interrupted),
+    ).toEqual({ status: 'failed', error: 'server berhenti saat check berjalan' });
+    await expect(fs.access(orphan)).rejects.toThrow();
+    const messages = lines.map((line) => line.msg);
+    expect(messages.indexOf('pemulihan check selesai')).toBeGreaterThanOrEqual(0);
+    expect(messages.indexOf('pemulihan check selesai')).toBeLessThan(
+      messages.indexOf('server mendengarkan'),
+    );
+
+    const provider = app.context.db
+      .prepare('SELECT * FROM repos WHERE id = ?')
+      .get(repoId) as Parameters<typeof app.context.checks.start>[0]['provider'];
+    const started = await app.context.checks.start({
+      provider,
+      baseRef: 'main',
+      headRef: 'feature/xyz',
+    });
+    await app.context.checks.registry.forProject(projectId)?.done;
+    expect(started.id).not.toBe(interrupted);
+    // Folder biasa bukan repo git, jadi check baru gagal di fetch; yang dibuktikan: ia sempat berjalan.
+    expect(
+      app.context.db.prepare('SELECT status, error FROM checks WHERE id = ?').get(started.id),
+    ).toMatchObject({ status: 'failed', error: expect.stringContaining('Fetch gagal') });
+    expect(app.context.checks.registry.forProject(projectId)).toBeUndefined();
   });
 
   it('port yang sudah dipakai -> EADDRINUSE', async () => {

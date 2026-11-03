@@ -26,6 +26,7 @@ import { createApp } from '../http/app.js';
 import { createLogger } from '../logger.js';
 import { createCommandRunner } from '../proc/run-command.js';
 import { projectRoutes } from '../projects/routes.js';
+import { createCheckRegistry, type CheckRegistry } from '../runner/registry.js';
 import { WorkspaceLayout } from '../workspace/layout.js';
 import { WorkspaceStore } from '../workspace/store.js';
 import type { DiscoveryRunner } from './discovery.js';
@@ -63,6 +64,7 @@ let tmp: string;
 let db: Db;
 let layout: WorkspaceLayout;
 let app: ReturnType<typeof createApp>;
+let registry: CheckRegistry;
 
 const order = () => fixtures.repos['svc-order'];
 const mfe = () => fixtures.repos['mfe-dashboard'];
@@ -95,9 +97,11 @@ beforeEach(async () => {
   migrate(db);
   const git = createGitAdapter(createCommandRunner({ oasdiffBin: 'oasdiff' }));
   const config = { gitConcurrency: 4 };
+  registry = createCheckRegistry();
+  const checks = { registry };
   const routes = [
-    projectRoutes({ db, workspace }),
-    repoRoutes({ db, workspace, git, config, discovery }),
+    projectRoutes({ db, workspace, checks }),
+    repoRoutes({ db, workspace, git, config, discovery, checks }),
   ];
   app = createApp({
     logger: createLogger({ level: 'silent' }),
@@ -761,5 +765,32 @@ describe('DELETE /api/repos/:id', () => {
     expect((await addRepo(project.id, { role: 'service', local_path: order().path })).status).toBe(
       201,
     );
+  });
+});
+
+describe('DELETE /api/repos/:id saat check berjalan (G-7)', () => {
+  it('409 hanya untuk repo yang dibaca check; repo lain di project yang sama tetap bisa dihapus', async () => {
+    const project = await newProject();
+    const provider = (await addRepo(project.id, { role: 'service', local_path: order().path }))
+      .body as Repo;
+    const other = (await addRepo(project.id, { role: 'microfrontend', local_path: mfe().path }))
+      .body as Repo;
+    registry.add({
+      checkId: 1,
+      projectId: project.id,
+      repoIds: new Set([provider.id]),
+      abort: new AbortController(),
+      done: Promise.resolve(),
+    });
+
+    const blocked = await request(app).delete(`/api/repos/${provider.id}`);
+    expect(blocked.status).toBe(409);
+    expect(errorOf(blocked.body).code).toBe('check_in_progress');
+    expect(count('repos', `id = ${provider.id}`)).toBe(1);
+
+    expect((await request(app).delete(`/api/repos/${other.id}`)).status).toBe(204);
+
+    registry.remove(1);
+    expect((await request(app).delete(`/api/repos/${provider.id}`)).status).toBe(204);
   });
 });

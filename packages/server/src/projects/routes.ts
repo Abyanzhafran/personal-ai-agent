@@ -10,6 +10,7 @@ import type { Router } from 'express';
 import type { Db } from '../db/database.js';
 import { HttpError } from '../http/errors.js';
 import { validated } from '../http/validate.js';
+import type { CheckRunner } from '../runner/check.js';
 import type { WorkspaceStore } from '../workspace/store.js';
 import { projectReadiness } from './readiness.js';
 import { createProjectRepository } from './repository.js';
@@ -18,13 +19,15 @@ import { slugify } from './slug.js';
 export interface ProjectRouteDeps {
   readonly db: Db;
   readonly workspace: WorkspaceStore;
+  /** Menolak DELETE selagi project punya check berjalan (G-7). */
+  readonly checks: { readonly registry: Pick<CheckRunner['registry'], 'forProject'> };
 }
 
 const projectNotFound = () =>
   new HttpError(404, ERROR_CODES.project_not_found, 'Project tidak ditemukan');
 
 /** Rute `/api/projects` (CC-012). Dipasang lewat `registerRoutes` di bootstrap. */
-export function projectRoutes({ db, workspace }: ProjectRouteDeps): (api: Router) => void {
+export function projectRoutes({ db, workspace, checks }: ProjectRouteDeps): (api: Router) => void {
   const projects = createProjectRepository(db);
 
   return (api) => {
@@ -97,6 +100,13 @@ export function projectRoutes({ db, workspace }: ProjectRouteDeps): (api: Router
       validated({ params: ProjectIdParams }, async ({ params }, _req, res) => {
         const project = projects.get(params.id);
         if (!project) throw projectNotFound();
+        if (checks.registry.forProject(project.id)) {
+          throw new HttpError(
+            409,
+            ERROR_CODES.check_in_progress,
+            'Project ini sedang menjalankan check. Tunggu sampai selesai sebelum menghapusnya.',
+          );
+        }
         // Berkas dulu, baris DB sesudahnya: bila berkas gagal dihapus, project masih ada dan DELETE yang
         // sama bisa diulang sampai tuntas. Kebalikannya meninggalkan folder yatim yang tak terjangkau API.
         await workspace.removeProjectData({

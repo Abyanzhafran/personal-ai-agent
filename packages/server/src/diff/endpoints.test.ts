@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { FIXTURE_CHANGELOG } from '../../../../fixtures/changelog.js';
 import { orderServiceSpec } from '../../../../fixtures/specs.js';
 import { buildEndpoints, normalizePath } from './endpoints.js';
 import type { OasdiffChange } from './oasdiff.js';
@@ -8,60 +9,6 @@ const baseSpec = orderServiceSpec('base') as Record<string, unknown>;
 
 const change = (over: Partial<OasdiffChange> & Pick<OasdiffChange, 'id' | 'level'>) =>
   ({ text: over.id, ...over }) satisfies OasdiffChange;
-
-/**
- * Changelog BUATAN TANGAN untuk tujuh kasus fixture CC-090 (oasdiff belum terpasang, D-35/D-36):
- * bentuk field dari sumber oasdiff, tetapi `id` dan `level` bukan keluaran sungguhan. Test ini
- * membuktikan pengelompokan, bukan angka "5 breaking di 3 endpoint" (AC1, G-6).
- */
-const FIXTURE_CHANGELOG: OasdiffChange[] = [
-  change({
-    id: 'request-parameter-removed',
-    level: 'warn',
-    operation: 'GET',
-    path: '/orders',
-    operationId: 'listOrders',
-  }),
-  change({
-    id: 'response-required-property-removed',
-    level: 'error',
-    operation: 'GET',
-    path: '/orders',
-    operationId: 'listOrders',
-  }),
-  change({
-    id: 'new-optional-request-parameter',
-    level: 'info',
-    operation: 'GET',
-    path: '/orders',
-    operationId: 'listOrders',
-  }),
-  change({
-    id: 'new-required-request-property',
-    level: 'error',
-    operation: 'POST',
-    path: '/orders',
-  }),
-  change({
-    id: 'response-property-type-changed',
-    level: 'error',
-    operation: 'GET',
-    path: '/orders/{order_id}',
-  }),
-  change({
-    id: 'response-property-type-changed',
-    level: 'info',
-    operation: 'GET',
-    path: '/orders/{order_id}',
-  }),
-  // Endpoint dihapus: entri tanpa operationId, jadi nilainya harus datang dari spec base.
-  change({
-    id: 'api-removed-without-deprecation',
-    level: 'error',
-    operation: 'POST',
-    path: '/orders/{order_id}/cancel',
-  }),
-];
 
 describe('buildEndpoints', () => {
   it('mengelompokkan per (method, path) dengan urutan kemunculan pertama dan level tertinggi', () => {

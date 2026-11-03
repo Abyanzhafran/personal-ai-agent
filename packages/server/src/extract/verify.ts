@@ -23,14 +23,22 @@ function staticSegment(path: string): string | undefined {
  *
  * `content` harus isi berkas yang sama dengan yang diekstraksi. Baris di atas `sent_lines` tidak
  * pernah dilihat model (berkas dipotong), jadi dihitung di luar jangkauan walau barisnya ada.
+ *
+ * `symbols` hanya untuk berkas hop 2 (D-42): barisnya memuat simbol pembungkus (`useOrders()`), bukan
+ * path atau field, jadi nama simbol juga dihitung sebagai bahan pembanding.
  */
-export function verifyExtraction(extraction: Extraction, content: string): Extraction {
+export function verifyExtraction(
+  extraction: Extraction,
+  content: string,
+  symbols: readonly string[] = [],
+): Extraction {
   const lines = splitLines(content);
   return {
     ...extraction,
     calls: extraction.calls.map((call) => {
       const text = call.line <= extraction.sent_lines ? lines[call.line - 1] : undefined;
       const evidence = [
+        ...symbols,
         staticSegment(call.path),
         ...call.query_params,
         ...call.body_fields.map((field) => field.name),

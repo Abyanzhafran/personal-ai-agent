@@ -30,6 +30,7 @@ import { DISCOVERY_PROMPT_VERSION, DiscoveryOutput } from '../llm/discovery.prom
 import { createLogger } from '../logger.js';
 import { createCommandRunner } from '../proc/run-command.js';
 import { projectRoutes } from '../projects/routes.js';
+import { createCheckRegistry } from '../runner/registry.js';
 import { WorkspaceLayout } from '../workspace/layout.js';
 import { WorkspaceStore } from '../workspace/store.js';
 import { createDiscoveryRunner, type DiscoveryRunner } from './discovery.js';
@@ -125,9 +126,10 @@ async function boot(llmConcurrency = 4) {
   const git = createGitAdapter(createCommandRunner({ oasdiffBin: 'oasdiff' }));
   const logger = createLogger({ level: 'silent' });
   discovery = createDiscoveryRunner({ db, workspace, git, llm, logger, config });
+  const checks = { registry: createCheckRegistry() };
   const routes = [
-    projectRoutes({ db, workspace }),
-    repoRoutes({ db, workspace, git, config, discovery }),
+    projectRoutes({ db, workspace, checks }),
+    repoRoutes({ db, workspace, git, config, discovery, checks }),
   ];
   app = createApp({ logger, registerRoutes: (api) => routes.forEach((register) => register(api)) });
   const closing = { db, tmp, discovery };
