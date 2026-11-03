@@ -25,6 +25,7 @@ import { WorkspaceLayout } from '../workspace/layout.js';
 import { WorkspaceStore } from '../workspace/store.js';
 import {
   CheckAlreadyRunningError,
+  CheckNotRunningError,
   createCheckRunner,
   type CheckRunner,
   type CheckRunnerDeps,
@@ -58,6 +59,8 @@ const callJson =
   vi.fn<(input: { prompt: { user: string }; signal?: AbortSignal }) => Promise<unknown>>();
 /** True = panggilan Claude menggantung sampai di-abort, supaya check tetap `running`. */
 let hold = false;
+/** Banyak panggilan pertama yang tetap dijawab sebelum `hold` berlaku. */
+let holdAfter = 0;
 /** Keluaran model palsu per path berkas consumer. */
 let outputs: Record<string, ApiCall[]>;
 
@@ -145,7 +148,7 @@ beforeAll(async () => {
 
   const commandRunner = createCommandRunner({ oasdiffBin: 'oasdiff', shellRoot: layout.checksDir });
   callJson.mockImplementation(async ({ prompt, signal }) => {
-    if (hold) {
+    if (hold && callJson.mock.calls.length > holdAfter) {
       // Seperti SDK asli: signal yang sudah ter-abort menolak langsung (event abort tidak muncul lagi).
       await new Promise((_, reject) => {
         if (signal?.aborted) reject(signal.reason);
@@ -205,6 +208,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   hold = false;
+  holdAfter = 0;
   callJson.mockClear();
   changelog.mockClear();
 });
@@ -311,6 +315,10 @@ const summaryOf = (checkId: number): CheckSummary =>
 const replayOf = (checkId: number): CheckEvent[] => [
   ...(runner.events.subscribe(checkId, () => undefined)?.replay ?? []),
 ];
+
+/** Detail event step terakhir untuk nomor langkah tertentu. */
+const lastStepDetail = (events: CheckEvent[], number: number): string =>
+  events.flatMap((e) => (e.type === 'step' && e.number === number ? [e.detail] : [])).at(-1) ?? '';
 
 const brief = (rows: FindingRow[]) =>
   rows.map((r) => [r.endpoint, r.repo, r.file, r.line, r.kind, r.severity, r.confidence]);
@@ -717,6 +725,79 @@ describe('batas dan kegagalan spec', () => {
     expect(check.status).toBe('failed');
     expect(check.error).toContain('gagal dikonversi dari Swagger 2');
     expect(changelog).not.toHaveBeenCalled();
+  }, 60_000);
+});
+
+describe('Batalkan (CC-062)', () => {
+  /** Worktree terdaftar di repo provider; hanya klon utama yang boleh tersisa. */
+  const worktrees = () =>
+    rawGit(order().path, 'worktree', 'list', '--porcelain')
+      .split('\n')
+      .filter((line) => line.startsWith('worktree '));
+  const leftovers = async (checkId: number) =>
+    (await fs.readdir(layout.checkRunDir(checkId)).catch(() => [] as string[])).filter((name) =>
+      name.startsWith('wt-'),
+    );
+
+  it('batal di tengah langkah 3: cancelled, nol worktree dan finding; ekstraksi yang selesai dipakai check berikutnya', async () => {
+    hold = true;
+    holdAfter = 2; // dua berkas pertama selesai dan masuk cache, sisanya menggantung
+    const provider = providerOf(allFixtures());
+    const started = await runner.start({ provider, baseRef: 'main', headRef: 'feature/xyz' });
+    await vi.waitFor(() => expect(callJson.mock.calls.length).toBeGreaterThanOrEqual(3), {
+      timeout: 60_000,
+    });
+
+    const cancelled = await runner.cancel(started.id);
+
+    expect(cancelled).toMatchObject({ id: started.id, status: 'cancelled', error: null });
+    expect(findingRows(started.id)).toEqual([]);
+    expect(await leftovers(started.id)).toEqual([]);
+    expect(worktrees()).toHaveLength(1);
+    expect(runner.registry.forProject(provider.project_id)).toBeUndefined();
+    expect(replayOf(started.id).at(-1)).toMatchObject({ type: 'done', status: 'cancelled' });
+
+    hold = false;
+    const callsBefore = callJson.mock.calls.length;
+    const next = await finish(provider);
+
+    expect(next.status).toBe('findings');
+    // Enam berkas (lima hop 1 + OrdersPage.tsx); dua sudah di cache dari check yang dibatalkan.
+    expect(callJson.mock.calls.length - callsBefore).toBe(4);
+    expect(lastStepDetail(replayOf(next.id), 3)).toContain('2 dari cache');
+  }, 180_000);
+
+  it('batal saat spec_cmd berjalan: proses dihentikan dan worktree dihapus dari disk dan metadata git', async () => {
+    const entries = Object.values(fixtures.repos).map(entryOf);
+    const slow = entries.map((entry) =>
+      entry.name === 'svc-order'
+        ? { ...entry, specCmd: 'node -e "setTimeout(() => {}, 120000)"' }
+        : entry,
+    );
+    const provider = providerOf(register(slow));
+    const started = await runner.start({ provider, baseRef: 'main', headRef: 'feature/xyz' });
+    await vi.waitFor(async () => expect(await leftovers(started.id)).toHaveLength(1), {
+      timeout: 60_000,
+    });
+    expect(worktrees()).toHaveLength(2);
+
+    const begin = Date.now();
+    const cancelled = await runner.cancel(started.id);
+
+    expect(Date.now() - begin).toBeLessThan(30_000); // spec_cmd sendiri akan berjalan 120 dtk
+    expect(cancelled.status).toBe('cancelled');
+    expect(await leftovers(started.id)).toEqual([]);
+    expect(worktrees()).toHaveLength(1);
+    expect(findingRows(started.id)).toEqual([]);
+  }, 120_000);
+
+  it('check yang sudah selesai atau tidak ada → CheckNotRunningError dan statusnya tidak berubah', async () => {
+    const finished = await finish(providerOf(allFixtures()), 'feature/old');
+    expect(finished.status).toBe('failed');
+
+    await expect(runner.cancel(finished.id)).rejects.toBeInstanceOf(CheckNotRunningError);
+    await expect(runner.cancel(99_999)).rejects.toBeInstanceOf(CheckNotRunningError);
+    expect(checksRepo().get(finished.id)?.status).toBe('failed');
   }, 60_000);
 });
 
