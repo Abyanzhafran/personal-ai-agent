@@ -5,7 +5,13 @@ import { readOperation } from './operation.js';
 
 /** Kolom "Sumber pembanding" pada matriks severity di dokumen Arsitektur. */
 export type FindingSource =
-  'query_params' | 'body_fields' | 'literal' | 'type' | 'response_fields_read' | 'changelog';
+  | 'query_params'
+  | 'body_fields'
+  | 'literal'
+  | 'type'
+  | 'response_fields_read'
+  | 'changelog'
+  | 'operation';
 
 export interface SeverityFinding {
   /** `spec_stale` bukan urusan modul ini (CC-036); `renamed` tidak ada (keputusan #5). */
@@ -31,10 +37,12 @@ const accepts = (headType: string, sentType: string): boolean =>
 
 /**
  * Delapan aturan matriks severity (CC-045) untuk satu pemakaian consumer, dibandingkan dengan
- * operasi yang sama di spec base dan head. Hanya properti tingkat atas yang dibandingkan. Dilewati
- * (tanpa finding) bila operasinya tidak ada di salah satu spec, bila `literal`/`type` bernilai
- * `null` (dinamis), dan bila `body_fields` kosong untuk aturan `required_added` (isi body tidak
- * terbaca, bukan berarti kosong). Keyakinan rendah tidak pernah `break`: diturunkan jadi `warn`.
+ * operasi yang sama di spec base dan head. Hanya properti tingkat atas yang dibandingkan. Operasi
+ * yang dihapus di head menghasilkan satu finding `removed` (G-10, tanpa kind baru karena `KINDS`
+ * terikat CHECK constraint DB). Dilewati (tanpa finding) bila operasinya tidak ada di base, bila
+ * `literal`/`type` bernilai `null` (dinamis), dan bila `body_fields` kosong untuk aturan
+ * `required_added` (isi body tidak terbaca, bukan berarti kosong). Keyakinan rendah tidak pernah
+ * `break`: diturunkan jadi `warn`.
  */
 export function callFindings(
   call: ApiCall,
@@ -43,7 +51,18 @@ export function callFindings(
 ): SeverityFinding[] {
   const before = readOperation(base, endpoint);
   const after = readOperation(head, endpoint);
-  if (!before || !after) return [];
+  if (!before) return [];
+  if (!after) {
+    return [
+      {
+        kind: 'removed',
+        severity: call.confidence === 'low' ? 'warn' : 'break',
+        source: 'operation',
+        name: `${endpoint.method} ${endpoint.path}`,
+        line: call.line,
+      },
+    ];
+  }
 
   const found: SeverityFinding[] = [];
   const add = (
