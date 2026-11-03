@@ -26,6 +26,7 @@ import type { ApiCall } from '../llm/extraction.prompt.js';
 import type { Logger } from '../logger.js';
 import type { DiscoveryRunner } from '../repos/discovery.js';
 import type { WorkspaceStore } from '../workspace/store.js';
+import type { StepReporter } from './events.js';
 
 export interface ConsumerStepDeps {
   readonly git: Pick<GitAdapter, 'revParse' | 'lsTree' | 'grepFixed' | 'grepWord' | 'show'>;
@@ -49,6 +50,8 @@ export interface ConsumerStepInput {
   /** Semua repo project; consumer = bukan provider dan bukan e2e. */
   readonly repos: readonly Repo[];
   readonly endpoints: readonly ChangedEndpoint[];
+  /** Event langkah 2–4 dan log untuk SSE. */
+  readonly report: StepReporter;
   readonly signal?: AbortSignal;
 }
 
@@ -84,7 +87,7 @@ export interface ConsumerStepResult {
  */
 export async function findConsumerCalls(
   deps: ConsumerStepDeps,
-  { checkId, provider, repos, endpoints, signal }: ConsumerStepInput,
+  { checkId, provider, repos, endpoints, report, signal }: ConsumerStepInput,
 ): Promise<ConsumerStepResult> {
   const { git, discovery, config, logger } = deps;
   const consumers = repos.filter((repo) => repo.role !== 'e2e' && repo.id !== provider.id);
@@ -98,6 +101,7 @@ export async function findConsumerCalls(
   const withSignal = signal === undefined ? {} : { signal };
 
   // Langkah 2: hop 1.
+  report.step(2, 'running');
   const search = await createConsumerGrep({ git, concurrency: config.gitConcurrency }).search({
     endpoints,
     repos: consumerRepos,
@@ -107,6 +111,29 @@ export async function findConsumerCalls(
   const endpointsWithoutConsumer = search.endpoints
     .filter(({ candidates }) => candidates.length === 0)
     .map(({ endpoint }) => `${endpoint.method} ${endpoint.path}`);
+
+  const candidateFiles = hop1.files.length + hop1.skipped_files;
+  const candidateRepos = new Set(
+    search.endpoints.flatMap(({ candidates }) => candidates.map((candidate) => candidate.repo)),
+  ).size;
+  const skippedNote =
+    hop1.skipped_files > 0
+      ? ` · ${hop1.skipped_files} file dilewati (batas ${config.maxFilesPerCheck})`
+      : '';
+  report.log(
+    'grep',
+    `${candidateFiles} candidate files in ${candidateRepos} repos` +
+      (hop1.skipped_files > 0
+        ? ` (${hop1.skipped_files} skipped, limit ${config.maxFilesPerCheck})`
+        : ''),
+  );
+  report.step(
+    2,
+    'done',
+    `${candidateFiles} file kandidat di ${candidateRepos} repo (git grep)` +
+      (repos.some((repo) => repo.role === 'e2e') ? ' · repo e2e dilewati' : '') +
+      skippedNote,
+  );
 
   const profiles = new Map(
     await Promise.all(
@@ -125,6 +152,7 @@ export async function findConsumerCalls(
     candidates: readonly (ConsumerCandidate &
       Partial<Pick<Hop2Candidate, 'symbols' | 'context'>>)[],
     maxCalls: number,
+    onResult: (result: FileExtraction) => void,
   ): Promise<{ files: ExtractedFile[]; results: FileExtraction[] }> {
     const repoOf = (name: string) => repoByName.get(name) as Repo;
     const byRepoId = new Map(consumers.map((repo) => [repo.id, repo]));
@@ -153,7 +181,7 @@ export async function findConsumerCalls(
       endpoints: promptEndpoints,
       readContent: (file) => read(byRepoId.get(file.repoId) as Repo, file.path),
       ...withSignal,
-      onFile: (result) =>
+      onFile: (result) => {
         logger.info(
           {
             checkId,
@@ -162,7 +190,17 @@ export async function findConsumerCalls(
             ...(result.status === 'ok' ? { source: result.source } : {}),
           },
           'ekstraksi berkas',
-        ),
+        );
+        report.log(
+          'extract',
+          result.status === 'ok'
+            ? `${result.path}${result.source === 'cache' ? ' (cache)' : ''}`
+            : result.status === 'failed'
+              ? `${result.path} failed: ${result.error}`
+              : `${result.path} skipped (Claude call limit)`,
+        );
+        onResult(result);
+      },
     });
 
     const extracted: ExtractedFile[] = [];
@@ -195,7 +233,21 @@ export async function findConsumerCalls(
   }
 
   // Langkah 3: ekstraksi hop 1.
-  const first = await extract(hop1.files, config.maxLlmCallsPerCheck);
+  let finished = 0;
+  let cached = 0;
+  let failed = 0;
+  const progress = () =>
+    `${finished} dari ${hop1.files.length} file selesai · ${cached} dari cache` +
+    (failed > 0 ? ` · ${failed} gagal` : '') +
+    ` · batas ${config.maxFilesPerCheck} file per check`;
+  report.step(3, 'running', progress());
+  const first = await extract(hop1.files, config.maxLlmCallsPerCheck, (result) => {
+    finished++;
+    if (result.status === 'ok' && result.source === 'cache') cached++;
+    if (result.status === 'failed') failed++;
+    report.step(3, 'running', progress());
+  });
+  report.step(3, 'done', progress());
 
   // Langkah 4: hop 2, hanya simbol dari pemakaian yang cocok dengan endpoint berubah.
   const wrappers: WrapperSymbol[] = first.files.flatMap((file) =>
@@ -208,6 +260,8 @@ export async function findConsumerCalls(
       })),
     ),
   );
+  const wrapperNames = [...new Set(wrappers.map((wrapper) => wrapper.symbol))];
+  if (wrappers.length > 0) report.step(4, 'running', `simbol: ${wrapperNames.join(', ')}`);
   const hop2 =
     wrappers.length === 0
       ? { files: [], skipped_files: 0, incomplete: false }
@@ -221,7 +275,21 @@ export async function findConsumerCalls(
   const used = first.results.filter(
     (result) => result.status === 'failed' || (result.status === 'ok' && result.source === 'llm'),
   ).length;
-  const second = await extract(hop2.files, Math.max(0, config.maxLlmCallsPerCheck - used));
+  const second = await extract(
+    hop2.files,
+    Math.max(0, config.maxLlmCallsPerCheck - used),
+    () => undefined,
+  );
+  const viaSymbols = [...new Set(hop2.files.flatMap((file) => file.symbols))].sort();
+  report.log('hop2', `${second.files.length} files via symbols ${viaSymbols.join(', ') || '-'}`);
+  report.step(
+    4,
+    'done',
+    wrappers.length === 0
+      ? 'Tidak ada simbol pembungkus'
+      : `${second.files.length} file lewat simbol` +
+          (viaSymbols.length > 0 ? `: ${viaSymbols.join(', ')}` : ''),
+  );
 
   const budgetSkipped = [...first.results, ...second.results].filter(
     (result) => result.status === 'skipped',

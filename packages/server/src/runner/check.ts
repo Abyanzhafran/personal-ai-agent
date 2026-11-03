@@ -1,4 +1,4 @@
-import type { Check, CheckSummary, Repo } from '@cc/shared';
+import type { Check, CheckSummary, DoneEvent, Repo } from '@cc/shared';
 import { createCheckRepository, type NewFinding } from '../checks/repository.js';
 import type { Config } from '../config.js';
 import type { Db } from '../db/database.js';
@@ -15,6 +15,7 @@ import { compareCalls } from './compare-step.js';
 import { findConsumerCalls, type ConsumerStepResult } from './consumers-step.js';
 import { diffSpecs } from './diff-step.js';
 import { CheckFailure } from './errors.js';
+import { createCheckEvents, type StepReporter } from './events.js';
 import { createCheckRegistry } from './registry.js';
 import { resolveRefs } from './resolve.js';
 
@@ -78,14 +79,24 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
   const checks = createCheckRepository(db);
   const repos = createRepoRepository(db);
   const registry = createCheckRegistry();
+  const events = createCheckEvents({ now });
   const fetcher = createProjectFetcher({ db, git, concurrency: config.gitConcurrency, now });
 
-  async function pipeline(check: Check, provider: Repo, signal: AbortSignal): Promise<void> {
-    const log = (step: string, name: string) =>
-      logger.info({ checkId: check.id, step, name }, 'langkah check dimulai');
+  const short = (sha: string) => sha.slice(0, 7);
+
+  async function pipeline(
+    check: Check,
+    provider: Repo,
+    signal: AbortSignal,
+    report: StepReporter,
+  ): Promise<void> {
     const projectRepos = repos.listByProject(provider.project_id);
 
-    log('1', 'Resolve ref dan diff spec');
+    report.log(
+      'start',
+      `check #${check.id} · ${provider.name} · ${check.base_ref} → ${check.head_ref}`,
+    );
+    report.step(1, 'running');
     const fetchErrors: CheckSummary['fetch_errors'] = [];
     for (const result of await fetcher.fetchProject(provider.project_id)) {
       if (result.ok) continue;
@@ -93,14 +104,19 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
         throw new CheckFailure(`Repo ${provider.name}: ${result.error}`);
       }
       fetchErrors.push({ repo: result.name, message: result.error ?? '' });
+      report.log('fetch', `${result.name}: ${result.error}`);
     }
     signal.throwIfAborted();
 
-    const { baseSha, headSha } = await resolveRefs(git, provider.local_path, {
+    const { baseTipSha, baseSha, headSha } = await resolveRefs(git, provider.local_path, {
       baseRef: check.base_ref,
       headRef: check.head_ref,
     });
     checks.setShas(check.id, baseSha, headSha);
+    report.log(
+      'resolve',
+      `${check.base_ref}=${short(baseTipSha)} · ${check.head_ref}=${short(headSha)} · merge-base=${short(baseSha)}`,
+    );
     const diff = await diffSpecs(
       {
         git,
@@ -115,20 +131,41 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
       { checkId: check.id, provider, baseSha, headSha, signal },
     );
     signal.throwIfAborted();
+    const breaking = diff.endpoints.reduce(
+      (total, endpoint) =>
+        total + endpoint.changes.filter((change) => change.level === 'error').length,
+      0,
+    );
+    const breakingEndpoints = diff.endpoints.filter(
+      (endpoint) => endpoint.max_level === 'break',
+    ).length;
+    report.log('diff', `oasdiff: ${breaking} breaking changes, ${breakingEndpoints} endpoints`);
+    report.log('diff', `spec_stale: ${diff.specStale === null ? 'no' : 'yes'}`);
+    report.step(
+      1,
+      'done',
+      `merge-base ${short(baseSha)} · ${breaking} perubahan breaking di ${breakingEndpoints} endpoint · spec_stale: ${diff.specStale === null ? 'tidak' : 'ya'}`,
+    );
 
     // Tanpa perubahan endpoint tidak ada yang dicari di consumer.
     let consumers = NO_CONSUMERS;
     let findings: NewFinding[] = [];
     let matched: Readonly<Record<string, readonly string[]>> = {};
     if (diff.endpoints.length > 0) {
-      log('2-4', 'Cari consumer, ekstraksi pemakaian, pemakai simbol');
       consumers = await findConsumerCalls(
         { git, discovery, llm: deps.llm, workspace, config, logger },
-        { checkId: check.id, provider, repos: projectRepos, endpoints: diff.endpoints, signal },
+        {
+          checkId: check.id,
+          provider,
+          repos: projectRepos,
+          endpoints: diff.endpoints,
+          report,
+          signal,
+        },
       );
       signal.throwIfAborted();
 
-      log('5', 'Bandingkan');
+      report.step(5, 'running');
       const compared = await compareCalls(
         { git, logger },
         {
@@ -139,6 +176,18 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
       );
       findings = [...compared.findings];
       matched = compared.matchedFields;
+      const count = (severity: NewFinding['severity']) =>
+        findings.filter((finding) => finding.severity === severity).length;
+      report.log('compare', `${compared.matchedCalls} matched calls`);
+      report.step(
+        5,
+        'done',
+        `${compared.matchedCalls} pemakaian cocok · ${count('break')} break · ${count('warn')} warn · ${count('info')} info`,
+      );
+    } else {
+      for (const number of [2, 3, 4, 5]) {
+        report.step(number, 'skipped', 'Tidak ada endpoint yang berubah');
+      }
     }
     if (diff.specStale !== null) {
       findings.push({
@@ -155,7 +204,7 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
       });
     }
 
-    log('6', 'Laporan');
+    report.step(6, 'running');
     // Setelah ini tidak ada `await`: status check tidak mungkin berubah menjadi cancelled/failed lebih dulu.
     signal.throwIfAborted();
     checks.saveResult(check.id, {
@@ -174,32 +223,39 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
       },
       finishedAt: now().toISOString(),
     });
+    report.log('report', `${findings.length} findings saved`);
+    report.step(6, 'done', `${findings.length} finding disimpan`);
   }
 
-  /** Tidak pernah menolak: apa pun yang terjadi berakhir sebagai status check. */
+  /** Tidak pernah menolak: apa pun yang terjadi berakhir sebagai status check dan event `done`. */
   async function execute(check: Check, provider: Repo, signal: AbortSignal): Promise<void> {
+    const report = events.reporter(check.id);
+    let status: DoneEvent['status'] = 'failed';
     try {
-      await pipeline(check, provider, signal);
+      await pipeline(check, provider, signal, report);
+      status = (checks.get(check.id) as Check).status as DoneEvent['status'];
     } catch (error) {
       try {
         if (signal.aborted) {
           checks.cancel(check.id, now().toISOString());
+          status = 'cancelled';
         } else {
           logger.warn({ checkId: check.id, err: error }, 'check gagal');
-          checks.fail(
-            check.id,
-            error instanceof Error ? error.message : String(error),
-            now().toISOString(),
-          );
+          const message = error instanceof Error ? error.message : String(error);
+          checks.fail(check.id, message, now().toISOString());
+          report.failRunning(message);
         }
       } catch (writeError) {
         logger.error({ checkId: check.id, err: writeError }, 'status check tidak bisa ditulis');
       }
     }
+    // Sesudah status tertulis: klien yang membaca ulang check setelah `done` melihat status akhir.
+    events.emit(check.id, { type: 'done', status });
   }
 
   return {
     registry,
+    events,
 
     /**
      * Membuat check dan memulainya di latar belakang; mengembalikan baris yang baru dibuat (status
@@ -219,6 +275,7 @@ export function createCheckRunner(deps: CheckRunnerDeps) {
         headRef,
         startedAt: now().toISOString(),
       });
+      events.open(check.id);
       const abort = new AbortController();
       const done = execute(check, provider, abort.signal).finally(() => registry.remove(check.id));
       registry.add({

@@ -65,6 +65,7 @@ const resolve = (repo: string, baseRef: string, headRef: string) =>
 describe('resolveRefs', () => {
   it('head berupa branch: base_sha = merge-base dengan base_ref', async () => {
     expect(await resolve(order.path, 'main', 'feature/xyz')).toEqual({
+      baseTipSha: order.commits['readme'], // ujung origin/main
       baseSha: order.commits['initial'],
       headSha: order.commits['feature-xyz'],
     });
@@ -72,6 +73,7 @@ describe('resolveRefs', () => {
 
   it('head berupa tag dan berupa SHA menghasilkan pasangan SHA yang sama dengan branch-nya', async () => {
     const expected = {
+      baseTipSha: order.commits['readme'],
       baseSha: order.commits['initial'],
       headSha: order.commits['feature-xyz'],
     };
@@ -87,6 +89,7 @@ describe('resolveRefs', () => {
 
   it('base_ref juga boleh tag atau commit', async () => {
     expect(await resolve(order.path, order.commits['initial'] as string, 'feature/xyz')).toEqual({
+      baseTipSha: order.commits['initial'],
       baseSha: order.commits['initial'],
       headSha: order.commits['feature-xyz'],
     });

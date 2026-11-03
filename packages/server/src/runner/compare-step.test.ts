@@ -50,7 +50,7 @@ describe('compareCalls', () => {
       },
     );
 
-    expect(result).toEqual({ findings: [], matchedFields: {} });
+    expect(result).toEqual({ findings: [], matchedCalls: 0, matchedFields: {} });
     expect(logger.info).toHaveBeenCalledWith(
       { repo: 'mfe', file: 'src/a.ts', path: '${BASE_URL}' },
       'pemakaian dilewati: path tidak bisa dinormalisasi',

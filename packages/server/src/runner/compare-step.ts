@@ -22,6 +22,8 @@ export interface CompareStepDeps {
 
 export interface CompareStepResult {
   readonly findings: readonly NewFinding[];
+  /** Pemakaian yang cocok dengan endpoint berubah. */
+  readonly matchedCalls: number;
   /** `'METHOD path'` → nama yang dipakai consumer dan tetap cocok di head (baris "Cocok:"). */
   readonly matchedFields: Readonly<Record<string, readonly string[]>>;
 }
@@ -75,6 +77,7 @@ export async function compareCalls(
   },
 ): Promise<CompareStepResult> {
   const findings: NewFinding[] = [];
+  let matchedCalls = 0;
   const matchedEndpoints = new Set<ChangedEndpoint>();
   // Satu consumer pada satu endpoint, dari semua berkasnya (kontrak `matchedFields`).
   const perConsumer = new Map<string, { endpoint: ChangedEndpoint; calls: ApiCall[] }>();
@@ -89,6 +92,7 @@ export async function compareCalls(
         ),
     });
     for (const { call, endpoint } of matches) {
+      matchedCalls++;
       matchedEndpoints.add(endpoint);
       const key = `${file.repo.id}\0${endpointKey(endpoint)}`;
       const group = perConsumer.get(key) ?? { endpoint, calls: [] };
@@ -145,6 +149,7 @@ export async function compareCalls(
   }
   return {
     findings,
+    matchedCalls,
     matchedFields: Object.fromEntries(
       [...matched].filter(([, names]) => names.size > 0).map(([key, names]) => [key, [...names]]),
     ),

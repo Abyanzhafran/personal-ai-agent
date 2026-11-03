@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { CheckSummary, type Check, type Repo } from '@cc/shared';
+import { CheckSummary, type Check, type CheckEvent, type Repo } from '@cc/shared';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FIXTURE_CHANGELOG } from '../../../../fixtures/changelog.js';
 import {
@@ -146,9 +146,11 @@ beforeAll(async () => {
   const commandRunner = createCommandRunner({ oasdiffBin: 'oasdiff', shellRoot: layout.checksDir });
   callJson.mockImplementation(async ({ prompt, signal }) => {
     if (hold) {
-      await new Promise((_, reject) =>
-        signal?.addEventListener('abort', () => reject(signal.reason), { once: true }),
-      );
+      // Seperti SDK asli: signal yang sudah ter-abort menolak langsung (event abort tidak muncul lagi).
+      await new Promise((_, reject) => {
+        if (signal?.aborted) reject(signal.reason);
+        else signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
     }
     const file = /^File: (.+)$/m.exec(prompt.user)?.[1] ?? '';
     return { calls: outputs[file] ?? [] };
@@ -304,6 +306,11 @@ const summaryOf = (checkId: number): CheckSummary =>
       ).summary_json,
     ),
   );
+
+/** Semua event check dari buffer (check yang sudah selesai tetap disimpan di memori). */
+const replayOf = (checkId: number): CheckEvent[] => [
+  ...(runner.events.subscribe(checkId, () => undefined)?.replay ?? []),
+];
 
 const brief = (rows: FindingRow[]) =>
   rows.map((r) => [r.endpoint, r.repo, r.file, r.line, r.kind, r.severity, r.confidence]);
@@ -551,6 +558,111 @@ describe('pipeline enam langkah (fixture asli, oasdiff dan Claude palsu)', () =>
   }, 120_000);
 });
 
+describe('event SSE dari pipeline (CC-061)', () => {
+  const stepsOf = (events: CheckEvent[]) => events.flatMap((e) => (e.type === 'step' ? [e] : []));
+  const logsOf = (events: CheckEvent[]) =>
+    events.flatMap((e) => (e.type === 'log' ? [`${e.category}: ${e.message}`] : []));
+  /** Status dan detail terakhir tiap nomor langkah. */
+  const lastPerStep = (events: CheckEvent[]) =>
+    Object.fromEntries(stepsOf(events).map((e) => [e.number, [e.status, e.detail]]));
+
+  it('enam langkah berakhir done dengan teks detail seperti mockup; log menandai berkas dari cache', async () => {
+    const repos = allFixtures();
+    const initial = (order().commits['initial'] as string).slice(0, 7);
+
+    const first = await finish(providerOf(repos));
+    const events = replayOf(first.id);
+
+    expect(events.map((e) => e.seq)).toEqual(events.map((_, index) => index + 1));
+    expect(new Set(stepsOf(events).map((e) => e.number))).toEqual(new Set([1, 2, 3, 4, 5, 6]));
+    expect(lastPerStep(events)).toEqual({
+      1: ['done', `merge-base ${initial} · 4 perubahan breaking di 4 endpoint · spec_stale: tidak`],
+      2: ['done', '5 file kandidat di 2 repo (git grep) · repo e2e dilewati'],
+      3: ['done', '5 dari 5 file selesai · 0 dari cache · batas 40 file per check'],
+      4: ['done', '1 file lewat simbol: useOrders'],
+      5: ['done', '5 pemakaian cocok · 3 break · 2 warn · 2 info'],
+      6: ['done', '7 finding disimpan'],
+    });
+    // Progres langkah 3: satu event running per berkas, lalu done.
+    expect(
+      stepsOf(events)
+        .filter((e) => e.number === 3)
+        .map((e) => e.status),
+    ).toEqual(['running', 'running', 'running', 'running', 'running', 'running', 'done']);
+    expect(events.at(-1)).toMatchObject({ type: 'done', status: 'findings' });
+
+    const logs = logsOf(events);
+    expect(logs[0]).toBe(`start: check #${first.id} · svc-order · main → feature/xyz`);
+    expect(logs).toContainEqual(
+      expect.stringMatching(/^resolve: main=\w{7} · feature\/xyz=\w{7} · merge-base=\w{7}$/),
+    );
+    expect(logs).toContain('diff: oasdiff: 4 breaking changes, 4 endpoints');
+    expect(logs).toContain('diff: spec_stale: no');
+    expect(logs).toContain('grep: 5 candidate files in 2 repos');
+    expect(logs).toContain('extract: src/api/orders.ts');
+    expect(logs).not.toContain('extract: src/api/orders.ts (cache)');
+
+    // Check kedua: semua berkas dari cache dan log menandainya.
+    const again = await finish(providerOf(repos));
+    const secondEvents = replayOf(again.id);
+    expect(lastPerStep(secondEvents)[3]).toEqual([
+      'done',
+      '5 dari 5 file selesai · 5 dari cache · batas 40 file per check',
+    ]);
+    expect(logsOf(secondEvents)).toContain('extract: src/api/orders.ts (cache)');
+  }, 180_000);
+
+  it('tanpa endpoint berubah: langkah 2–5 dilewati dengan alasannya, check clean', async () => {
+    changelog.mockResolvedValue([]);
+
+    const check = await finish(providerOf(allFixtures()));
+    const events = replayOf(check.id);
+
+    expect(lastPerStep(events)).toMatchObject({
+      1: ['done', expect.stringContaining('0 perubahan breaking di 0 endpoint')],
+      2: ['skipped', 'Tidak ada endpoint yang berubah'],
+      3: ['skipped', 'Tidak ada endpoint yang berubah'],
+      4: ['skipped', 'Tidak ada endpoint yang berubah'],
+      5: ['skipped', 'Tidak ada endpoint yang berubah'],
+      6: ['done', '0 finding disimpan'],
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'done', status: 'clean' });
+    changelog.mockImplementation(() => Promise.resolve([...FIXTURE_CHANGELOG]));
+  }, 120_000);
+
+  it('langkah yang gagal mengirim step failed dengan alasannya lalu done failed', async () => {
+    const check = await finish(providerOf(allFixtures()), 'feature/old');
+    const events = replayOf(check.id);
+
+    expect(stepsOf(events).map((e) => [e.number, e.status, e.detail])).toEqual([
+      [1, 'running', ''],
+      [1, 'failed', 'origin/feature/old tidak ada'],
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: 'done', status: 'failed' });
+  }, 60_000);
+
+  it('klien yang menyambung di tengah langkah 3 tetap menerima langkah 1 dan 2; abort berakhir done cancelled', async () => {
+    hold = true;
+    const provider = providerOf(allFixtures());
+    const started = await runner.start({ provider, baseRef: 'main', headRef: 'feature/xyz' });
+    await vi.waitFor(() => expect(callJson).toHaveBeenCalled(), { timeout: 60_000 });
+
+    const live: CheckEvent[] = [];
+    const subscription = runner.events.subscribe(started.id, (event) => live.push(event));
+    expect(subscription?.finished).toBe(false);
+    expect(lastPerStep([...(subscription?.replay ?? [])])).toMatchObject({
+      1: ['done', expect.stringContaining('merge-base')],
+      2: ['done', expect.stringContaining('file kandidat')],
+      3: ['running', expect.stringContaining('dari 5 file selesai')],
+    });
+
+    await runner.stop();
+
+    expect(live.at(-1)).toMatchObject({ type: 'done', status: 'cancelled' });
+    expect(runner.events.listenerCount(started.id)).toBe(0);
+  }, 120_000);
+});
+
 describe('batas dan kegagalan spec', () => {
   it('batas berkas per check memotong kandidat: ringkasan incomplete dengan jumlah yang terlewat', async () => {
     const limited = createCheckRunner({ ...deps, config: { ...deps.config, maxFilesPerCheck: 2 } });
@@ -568,6 +680,14 @@ describe('batas dan kegagalan spec', () => {
       skipped_files: 3,
       files_checked: 3,
       files_via_hop2: 1,
+    });
+    // Jumlah yang dilewati muncul di event langkah 2 (CC-038).
+    const stepTwo = limited.events
+      .subscribe(started.id, () => undefined)
+      ?.replay.find((e) => e.type === 'step' && e.number === 2 && e.status === 'done');
+    expect(stepTwo).toMatchObject({
+      detail:
+        '5 file kandidat di 2 repo (git grep) · repo e2e dilewati · 3 file dilewati (batas 2)',
     });
   }, 120_000);
 

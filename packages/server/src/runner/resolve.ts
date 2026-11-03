@@ -27,6 +27,8 @@ async function resolveRef(
 }
 
 export interface ResolvedRefs {
+  /** Ujung `base_ref`; `baseSha` adalah merge-base-nya dengan head. */
+  readonly baseTipSha: string;
   readonly baseSha: string;
   readonly headSha: string;
 }
@@ -48,5 +50,5 @@ export async function resolveRefs(
       `Riwayat ${baseRef} dan ${headRef} tidak berhubungan: tidak ada leluhur bersama untuk dibandingkan`,
     );
   }
-  return { baseSha, headSha };
+  return { baseTipSha: baseTip, baseSha, headSha };
 }
