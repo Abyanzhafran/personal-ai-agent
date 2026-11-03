@@ -68,3 +68,10 @@ export const Check = z.object({
   error: z.string().nullable(),
 });
 export type Check = z.infer<typeof Check>;
+
+const INVALID_CHECK_ID = 'Id check tidak valid';
+
+export const CheckIdParams = z.object({
+  id: z.coerce.number({ error: INVALID_CHECK_ID }).int(INVALID_CHECK_ID).positive(INVALID_CHECK_ID),
+});
+export type CheckIdParams = z.infer<typeof CheckIdParams>;
