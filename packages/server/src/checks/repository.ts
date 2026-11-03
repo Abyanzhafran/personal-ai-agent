@@ -85,12 +85,19 @@ export function createCheckRepository(db: Db) {
     'UPDATE checks SET status = @status, error = @error, finished_at = @finishedAt WHERE id = @id',
   );
 
+  const selectRunning = db.prepare(
+    `SELECT ${COLUMNS} FROM checks WHERE status = 'running' ORDER BY id`,
+  );
+
   function get(id: number): Check | undefined {
     return selectCheck.get(id) as Check | undefined;
   }
 
   return {
     get,
+
+    /** Check yang masih `running` di DB; saat start berarti prosesnya sudah mati (CC-063). */
+    listRunning: (): Check[] => selectRunning.all() as Check[],
 
     /** Baris baru berstatus `running`. */
     create(input: NewCheck): Check {
