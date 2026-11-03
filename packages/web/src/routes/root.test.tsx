@@ -43,3 +43,31 @@ it('teks shell (nav, logo, breadcrumb, wadah toast) seluruhnya datang dari kamus
   );
   for (const label of labels) expect(withoutMarkers(label ?? '')).toBe('');
 });
+
+it('layar Panduan: seluruh teksnya datang dari kamus dan setiap kunci guide.* terpakai', async () => {
+  const { id } = await vi.importActual<{ id: typeof realId }>('../locales/id');
+  const router = createAppRouter({
+    history: createMemoryHistory({ initialEntries: ['/panduan'] }),
+  });
+  render(
+    <QueryClientProvider client={createQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  const main = await screen.findByRole('main');
+  await screen.findByRole('heading', { level: 1 });
+
+  // Nomor langkah adalah angka dekoratif (aria-hidden), bukan teks bahasa.
+  const shown = main.cloneNode(true) as HTMLElement;
+  for (const el of shown.querySelectorAll('[aria-hidden="true"]')) el.remove();
+  const text = shown.textContent ?? '';
+  expect(withoutMarkers(text)).toBe('');
+  for (const key of Object.keys(id).filter((k) => k.startsWith('guide.'))) {
+    expect(text).toContain(`§${key}§`);
+  }
+  for (const el of main.querySelectorAll('[aria-label], [title]')) {
+    expect(withoutMarkers(el.getAttribute('aria-label') ?? el.getAttribute('title') ?? '')).toBe(
+      '',
+    );
+  }
+});

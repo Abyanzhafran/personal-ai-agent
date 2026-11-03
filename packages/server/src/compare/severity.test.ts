@@ -297,6 +297,34 @@ describe('spec fixture CC-090 (base → head)', () => {
   });
 });
 
+describe('operasi dihapus di head (G-10)', () => {
+  const withOp = spec({ query: ['x'] });
+  const removed = { base: withOp, head: { paths: {} } };
+
+  it('call yang cocok menjadi satu finding removed/break pada endpoint itu', () => {
+    expect(callFindings(call({ line: 12 }), endpoint, removed)).toEqual([
+      { kind: 'removed', severity: 'break', source: 'operation', name: 'POST /orders', line: 12 },
+    ]);
+  });
+
+  it('keyakinan rendah diturunkan jadi warn, seperti aturan lain', () => {
+    const [finding] = callFindings(call({ confidence: 'low' }), endpoint, removed);
+    expect(finding).toMatchObject({ kind: 'removed', severity: 'warn' });
+  });
+
+  it('fixture: POST /orders/{order_id}/cancel hilang di head', () => {
+    const cancel = { method: 'POST', path: '/orders/{order_id}/cancel' };
+    const specs = {
+      base: orderServiceSpec('base') as Schema,
+      head: orderServiceSpec('head') as Schema,
+    };
+
+    expect(
+      callFindings(call(cancel), cancel, specs).map((f) => [f.kind, f.severity, f.name]),
+    ).toEqual([['removed', 'break', 'POST /orders/{order_id}/cancel']]);
+  });
+});
+
 describe('yang dilewati', () => {
   it('pemakaian yang masih cocok dengan head → tanpa finding', () => {
     const shape = {
@@ -315,13 +343,11 @@ describe('yang dilewati', () => {
     ).toEqual([]);
   });
 
-  it('operasi tidak ada di base atau di head → tanpa finding', () => {
+  it('operasi tidak ada di base → tanpa finding', () => {
     const usage = call({ query_params: ['x'], body_fields: [field('y')] });
     const withOp = spec({ query: ['x'], body: { y: {} } });
-    const without = { paths: {} };
 
-    expect(callFindings(usage, endpoint, { base: without, head: withOp })).toEqual([]);
-    expect(callFindings(usage, endpoint, { base: withOp, head: without })).toEqual([]);
+    expect(callFindings(usage, endpoint, { base: { paths: {} }, head: withOp })).toEqual([]);
   });
 
   it('literal dan type null (dinamis) tidak dibandingkan', () => {

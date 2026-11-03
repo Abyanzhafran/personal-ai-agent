@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createQueryClient } from './lib/query-client';
@@ -21,11 +21,10 @@ function renderAt(path: string) {
 const screenRoute = async () => (await screen.findByTestId('screen')).getAttribute('data-route');
 
 describe('rute', () => {
-  // `/`, `/projects/:id`, dan `/repos/:id/discovery` sudah layar sungguhan: lihat components/*-screen.test.tsx.
+  // `/`, `/projects/:id`, `/repos/:id/discovery`, dan `/panduan` sudah layar sungguhan: lihat components/*-screen.test.tsx.
   it.each([
     ['/checks', '/checks', null],
     ['/checks/42', '/checks/$checkId', '{"checkId":"42"}'],
-    ['/panduan', '/panduan', null],
   ])('%s merender layarnya', async (path, route, params) => {
     renderAt(path);
     expect(await screenRoute()).toBe(route);
@@ -47,11 +46,12 @@ describe('rute', () => {
 
 describe('navigasi', () => {
   it('berpindah rute tanpa memuat ulang halaman: shell tetap objek DOM yang sama', async () => {
-    const router = renderAt('/panduan');
-    expect(await screenRoute()).toBe('/panduan');
+    const router = renderAt('/checks/42');
+    expect(await screenRoute()).toBe('/checks/$checkId');
     const nav = screen.getByTestId('nav');
 
-    await userEvent.click(screen.getByRole('link', { name: 'Checks' }));
+    // Breadcrumb di halaman ini juga bertaut "Checks"; yang diuji adalah nav rail.
+    await userEvent.click(within(nav).getByRole('link', { name: 'Checks' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/checks'));
     expect(await screenRoute()).toBe('/checks');
     expect(screen.getByTestId('nav')).toBe(nav);
@@ -62,7 +62,7 @@ describe('navigasi', () => {
   });
 
   it('klik link dicegat router (preventDefault), sehingga browser tidak memuat halaman baru', async () => {
-    renderAt('/panduan');
+    renderAt('/checks');
     await screenRoute();
     const link = screen.getByRole('link', { name: 'Checks' });
     // fireEvent.click mengembalikan false bila ada handler yang memanggil preventDefault().
@@ -70,7 +70,7 @@ describe('navigasi', () => {
   });
 
   it('navigasi programatik membawa parameter', async () => {
-    const router = renderAt('/panduan');
+    const router = renderAt('/checks');
     await screenRoute();
     await router.navigate({ to: '/checks/$checkId', params: { checkId: '99' } });
     expect(await screenRoute()).toBe('/checks/$checkId');

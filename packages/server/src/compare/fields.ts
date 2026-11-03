@@ -5,13 +5,14 @@ import { callFindings, type FindingSource, type Specs } from './severity.js';
 
 // Finding `type`/`literal` menunjuk field body; grup mencegah finding pada `status` di body
 // menyembunyikan `status` yang cocok di query.
-const GROUP: Record<FindingSource, 'query' | 'body' | 'response' | 'changelog'> = {
+const GROUP: Record<FindingSource, 'query' | 'body' | 'response' | 'changelog' | 'operation'> = {
   query_params: 'query',
   body_fields: 'body',
   literal: 'body',
   type: 'body',
   response_fields_read: 'response',
   changelog: 'changelog',
+  operation: 'operation',
 };
 
 /**
