@@ -1,0 +1,601 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { CheckSummary, type Check, type Repo } from '@cc/shared';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { FIXTURE_CHANGELOG } from '../../../../fixtures/changelog.js';
+import {
+  makeFixtures,
+  type FixtureRepo,
+  type FixtureSet,
+} from '../../../../fixtures/make-fixtures.js';
+import { createCheckRepository } from '../checks/repository.js';
+import { openDatabase, type Db } from '../db/database.js';
+import { migrate } from '../db/migrate.js';
+import { OasdiffUnavailableError, type OasdiffChange } from '../diff/oasdiff.js';
+import { createGitAdapter } from '../git/adapter.js';
+import type { LlmClient } from '../llm/client.js';
+import type { ApiCall } from '../llm/extraction.prompt.js';
+import { createLogger } from '../logger.js';
+import { createCommandRunner } from '../proc/run-command.js';
+import { createProjectRepository } from '../projects/repository.js';
+import { createRepoRepository } from '../repos/repository.js';
+import { WorkspaceLayout } from '../workspace/layout.js';
+import { WorkspaceStore } from '../workspace/store.js';
+import {
+  CheckAlreadyRunningError,
+  createCheckRunner,
+  type CheckRunner,
+  type CheckRunnerDeps,
+} from './check.js';
+
+const IDENTITY = {
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 'test@example.com',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 'test@example.com',
+};
+
+/** git mentah untuk menyiapkan data uji; bukan bagian yang diuji. */
+const rawGit = (repo: string, ...args: string[]): string =>
+  execFileSync('git', ['-C', repo, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ...IDENTITY },
+  }).trim();
+
+let tmp: string;
+let fixtures: FixtureSet;
+let layout: WorkspaceLayout;
+let db: Db;
+let deps: CheckRunnerDeps;
+let runner: CheckRunner;
+let unrelated: string;
+let projectCount = 0;
+
+const changelog = vi.fn<() => Promise<OasdiffChange[]>>();
+const callJson =
+  vi.fn<(input: { prompt: { user: string }; signal?: AbortSignal }) => Promise<unknown>>();
+/** True = panggilan Claude menggantung sampai di-abort, supaya check tetap `running`. */
+let hold = false;
+/** Keluaran model palsu per path berkas consumer. */
+let outputs: Record<string, ApiCall[]>;
+
+const order = (): FixtureRepo => fixtures.repos['svc-order'];
+
+const call = (over: Partial<ApiCall>): ApiCall => ({
+  method: 'GET',
+  path: '/orders',
+  file: '',
+  line: 1,
+  query_params: [],
+  body_fields: [],
+  response_fields_read: [],
+  confidence: 'high',
+  wrapper_symbols: [],
+  ...over,
+});
+
+/** Nomor baris pertama di berkas klon fixture yang memuat `needle` (D-17: anchor baris fixture). */
+async function lineOf(repo: FixtureRepo, file: string, needle: string): Promise<number> {
+  const text = await fs.readFile(path.join(repo.path, file), 'utf8');
+  const index = text.split('\n').findIndex((line) => line.includes(needle));
+  if (index < 0) throw new Error(`${file} tidak memuat '${needle}'`);
+  return index + 1;
+}
+
+beforeAll(async () => {
+  tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-runner-check-'));
+  fixtures = await makeFixtures(path.join(tmp, 'fixtures'));
+  rawGit(order().path, 'tag', 'v-feature', order().commits['feature-xyz'] as string);
+
+  const mfe = fixtures.repos['mfe-dashboard'];
+  const payment = fixtures.repos['svc-payment'];
+  outputs = {
+    'src/api/orders.ts': [
+      call({
+        line: await lineOf(mfe, 'src/api/orders.ts', "http.get('/orders'"),
+        query_params: ['page_size', 'status'],
+        wrapper_symbols: ['listOrders'],
+      }),
+      call({
+        path: '/orders/${id}',
+        line: await lineOf(mfe, 'src/api/orders.ts', 'getOrder ='),
+        response_fields_read: [
+          { name: 'grand_total', line: await lineOf(mfe, 'src/api/orders.ts', 'getOrder =') },
+        ],
+        wrapper_symbols: ['getOrder'],
+      }),
+    ],
+    'src/hooks/useOrders.ts': [
+      call({
+        line: await lineOf(mfe, 'src/hooks/useOrders.ts', "queryKey: ['orders'"),
+        confidence: 'medium',
+        wrapper_symbols: ['useOrders'],
+      }),
+    ],
+    // Hop 2: baris yang disitasi memuat simbol `useOrders`, bukan path atau field.
+    'src/pages/OrdersPage.tsx': [
+      call({
+        line: await lineOf(mfe, 'src/pages/OrdersPage.tsx', 'useOrders(filters)'),
+        response_fields_read: [
+          { name: 'total', line: await lineOf(mfe, 'src/pages/OrdersPage.tsx', 'data.total') },
+          { name: 'items', line: await lineOf(mfe, 'src/pages/OrdersPage.tsx', 'data.items') },
+        ],
+      }),
+    ],
+    'internal/clients/order_client.go': [
+      call({
+        method: 'POST',
+        line: await lineOf(payment, 'internal/clients/order_client.go', 'c.baseURL + "/orders"'),
+        body_fields: [
+          { name: 'customer_id', literal: null, type: 'string' },
+          { name: 'items', literal: null, type: 'array' },
+          { name: 'note', literal: null, type: 'string' },
+        ],
+      }),
+    ],
+  };
+
+  layout = new WorkspaceLayout(path.join(tmp, 'workspace'));
+  const workspace = new WorkspaceStore(layout);
+  await workspace.ensure();
+  db = openDatabase(':memory:');
+  migrate(db);
+
+  const commandRunner = createCommandRunner({ oasdiffBin: 'oasdiff', shellRoot: layout.checksDir });
+  callJson.mockImplementation(async ({ prompt, signal }) => {
+    if (hold) {
+      await new Promise((_, reject) =>
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true }),
+      );
+    }
+    const file = /^File: (.+)$/m.exec(prompt.user)?.[1] ?? '';
+    return { calls: outputs[file] ?? [] };
+  });
+  changelog.mockImplementation(() => Promise.resolve([...FIXTURE_CHANGELOG]));
+  deps = {
+    db,
+    config: {
+      anthropicModel: 'model-uji',
+      gitConcurrency: 4,
+      llmConcurrency: 2,
+      maxFilesPerCheck: 40,
+      maxLlmCallsPerCheck: 40,
+      specCmdTimeoutMs: 60_000,
+    },
+    logger: createLogger({ level: 'silent' }),
+    workspace,
+    git: createGitAdapter(commandRunner),
+    runner: commandRunner,
+    oasdiff: { assertAvailable: () => Promise.resolve('1.35.0'), changelog },
+    llm: { callJson } as unknown as Pick<LlmClient, 'callJson'>,
+    discovery: {
+      profile: () =>
+        Promise.resolve({
+          status: 'approved',
+          error: null,
+          profile: {
+            profile_md: 'Aplikasi uji.',
+            spec_path: null,
+            spec_cmd: null,
+            handler_dirs: [],
+            http_client: null,
+            base_url_pattern: null,
+          },
+        }),
+    },
+  };
+  runner = createCheckRunner(deps);
+
+  // Dua cabang origin yang riwayatnya tidak berhubungan.
+  const bare = path.join(tmp, 'unrelated.git');
+  unrelated = path.join(tmp, 'unrelated');
+  await fs.mkdir(unrelated, { recursive: true });
+  rawGit(tmp, 'init', '--quiet', '--bare', bare);
+  rawGit(unrelated, 'init', '--quiet', '--initial-branch=main');
+  rawGit(unrelated, 'commit', '--quiet', '--allow-empty', '-m', 'main');
+  rawGit(unrelated, 'checkout', '--quiet', '--orphan', 'lain');
+  rawGit(unrelated, 'commit', '--quiet', '--allow-empty', '-m', 'lain');
+  rawGit(unrelated, 'remote', 'add', 'origin', bare);
+  rawGit(unrelated, 'push', '--quiet', 'origin', 'main', 'lain');
+}, 120_000);
+
+afterEach(() => {
+  hold = false;
+  callJson.mockClear();
+  changelog.mockClear();
+});
+
+afterAll(async () => {
+  await runner.stop();
+  db.close();
+  await fs.rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+});
+
+interface Entry {
+  readonly name: string;
+  readonly role: Repo['role'];
+  readonly path: string;
+  readonly defaultBranch?: string;
+  readonly specPath?: string | null;
+  readonly specCmd?: string | null;
+}
+
+const entryOf = (repo: FixtureRepo): Entry => ({
+  name: repo.name,
+  role: repo.role,
+  path: repo.path,
+  defaultBranch: repo.defaultBranch,
+  specPath: repo.specPath ?? null,
+  specCmd: repo.specCmd ?? null,
+});
+
+/** Project baru berisi `entries`; repo pertama adalah provider. */
+function register(entries: readonly Entry[]): Repo[] {
+  const projects = createProjectRepository(db);
+  const repos = createRepoRepository(db);
+  projectCount++;
+  const project = projects.create({
+    name: `Project ${projectCount}`,
+    slug: `project-${projectCount}`,
+    description: null,
+  });
+  return entries.map((entry) => {
+    const created = repos.create({
+      projectId: project?.id as number,
+      role: entry.role,
+      name: entry.name,
+      localPath: entry.path,
+      defaultBranch: entry.defaultBranch ?? 'main',
+    });
+    if ('conflict' in created) throw new Error(`bentrok: ${entry.name}`);
+    return repos.update(created.repo.id, {
+      role: entry.role,
+      defaultBranch: entry.defaultBranch ?? 'main',
+      specPath: entry.specPath ?? null,
+      specCmd: entry.specCmd ?? null,
+    }) as Repo;
+  });
+}
+
+const allFixtures = (): Repo[] => register(Object.values(fixtures.repos).map(entryOf));
+
+const checksRepo = () => createCheckRepository(db);
+
+async function finish(provider: Repo, headRef = 'feature/xyz', baseRef = 'main'): Promise<Check> {
+  const started = await runner.start({ provider, baseRef, headRef });
+  await runner.registry.forProject(provider.project_id)?.done;
+  return checksRepo().get(started.id) as Check;
+}
+
+const providerOf = (repos: Repo[]) => repos.find((repo) => repo.name === 'svc-order') as Repo;
+
+interface FindingRow {
+  endpoint: string;
+  repo: string | null;
+  file: string | null;
+  line: number | null;
+  kind: string;
+  severity: string;
+  detail: string;
+  confidence: string | null;
+  via_symbol: string | null;
+  snippet_json: string | null;
+}
+
+const findingRows = (checkId: number): FindingRow[] =>
+  db
+    .prepare(
+      `SELECT f.endpoint, r.name AS repo, f.file, f.line, f.kind, f.severity, f.detail,
+              f.confidence, f.via_symbol, f.snippet_json
+       FROM findings f LEFT JOIN repos r ON r.id = f.consumer_repo_id
+       WHERE f.check_id = ? ORDER BY f.id`,
+    )
+    .all(checkId) as FindingRow[];
+
+const summaryOf = (checkId: number): CheckSummary =>
+  CheckSummary.parse(
+    JSON.parse(
+      (
+        db.prepare('SELECT summary_json FROM checks WHERE id = ?').get(checkId) as {
+          summary_json: string;
+        }
+      ).summary_json,
+    ),
+  );
+
+const brief = (rows: FindingRow[]) =>
+  rows.map((r) => [r.endpoint, r.repo, r.file, r.line, r.kind, r.severity, r.confidence]);
+
+describe('pipeline enam langkah (fixture asli, oasdiff dan Claude palsu)', () => {
+  it('merangkai langkah 1–6: finding, ringkasan, artefak, dan cache ekstraksi', async () => {
+    const repos = allFixtures();
+    const check = await finish(providerOf(repos));
+
+    expect(check).toMatchObject({
+      status: 'findings',
+      error: null,
+      base_sha: order().commits['initial'],
+      head_sha: order().commits['feature-xyz'],
+    });
+    expect(check.finished_at).not.toBeNull();
+
+    const mfe = fixtures.repos['mfe-dashboard'];
+    const listLine = await lineOf(mfe, 'src/api/orders.ts', "http.get('/orders'");
+    const paymentLine = await lineOf(
+      fixtures.repos['svc-payment'],
+      'internal/clients/order_client.go',
+      'c.baseURL + "/orders"',
+    );
+    const totalLine = await lineOf(mfe, 'src/pages/OrdersPage.tsx', 'data.total');
+    const detailLine = await lineOf(mfe, 'src/api/orders.ts', 'getOrder =');
+    const rows = findingRows(check.id);
+    expect(brief(rows)).toEqual(
+      expect.arrayContaining([
+        ['GET /orders', 'mfe-dashboard', 'src/api/orders.ts', listLine, 'removed', 'break', 'high'],
+        // Hop 2: keyakinan dibatasi medium oleh markViaSymbol; dilolos verifikasi lewat simbol.
+        [
+          'GET /orders',
+          'mfe-dashboard',
+          'src/pages/OrdersPage.tsx',
+          totalLine,
+          'removed',
+          'break',
+          'medium',
+        ],
+        [
+          'POST /orders',
+          'svc-payment',
+          'internal/clients/order_client.go',
+          paymentLine,
+          'required_added',
+          'break',
+          'high',
+        ],
+        [
+          'POST /orders',
+          'svc-payment',
+          'internal/clients/order_client.go',
+          paymentLine,
+          'param_mismatch',
+          'warn',
+          'high',
+        ],
+        [
+          'GET /orders/{order_id}',
+          'mfe-dashboard',
+          'src/api/orders.ts',
+          detailLine,
+          'type_changed',
+          'warn',
+          'high',
+        ],
+        ['GET /orders', null, null, null, 'type_changed', 'info', null],
+        ['GET /orders/{order_id}', null, null, null, 'type_changed', 'info', null],
+      ]),
+    );
+    expect(rows).toHaveLength(7);
+
+    const viaHop2 = rows.find((r) => r.file === 'src/pages/OrdersPage.tsx');
+    expect(viaHop2?.via_symbol).toBe('useOrders');
+    const removedQuery = rows.find((r) => r.line === listLine);
+    expect(removedQuery?.detail).toContain('page_size');
+    expect(removedQuery?.detail).toContain('limit'); // saran heuristik (CC-047)
+    // Sorotan di baris panggilan; page_size ada di baris sesudahnya, jadi tidak jadi token (D-47).
+    const querySnippet = JSON.parse(removedQuery?.snippet_json as string) as {
+      highlight: number;
+      tokens: string[];
+      lines: { n: number; text: string }[];
+    };
+    expect(querySnippet).toMatchObject({ highlight: listLine, tokens: [] });
+    expect(querySnippet.lines.some((l) => l.text.includes('page_size'))).toBe(true);
+    // Field response disitir di barisnya sendiri, jadi tokennya tersimpan.
+    expect(JSON.parse(viaHop2?.snippet_json as string)).toMatchObject({
+      highlight: totalLine,
+      tokens: ['total'],
+    });
+
+    const summary = summaryOf(check.id);
+    expect(summary).toMatchObject({
+      counts: { break: 3, warn: 2, info: 2 },
+      files_checked: 6, // lima berkas hop 1 + OrdersPage.tsx
+      files_via_hop2: 1,
+      endpoints_without_consumer: [],
+      incomplete: false,
+      skipped_files: 0,
+      spec_unpinned: false,
+      fetch_errors: [],
+    });
+    expect(summary.tool_versions['oasdiff']).toBe('1.35.0');
+    expect(Object.keys(summary.consumer_shas).sort()).toEqual(['mfe-dashboard', 'svc-payment']);
+    expect(summary.consumer_shas['mfe-dashboard']).toBe(
+      rawGit(mfe.path, 'rev-parse', 'origin/main'),
+    );
+    expect(summary.matched_fields['POST /orders']).toEqual(['customer_id', 'items']);
+    expect(summary.matched_fields['GET /orders']).toEqual(['status', 'items']);
+
+    // Artefak langkah 1 dan hasil ekstraksi (6 panggilan Claude, satu berkas per hasil).
+    for (const name of ['spec-base.json', 'spec-head.json', 'changelog.json']) {
+      await expect(fs.stat(layout.checkArtifact(check.id, name))).resolves.toBeDefined();
+    }
+    const extracted = await fs.readdir(path.join(layout.checkRunDir(check.id), 'extract'));
+    expect(extracted).toHaveLength(6);
+    expect(callJson).toHaveBeenCalledTimes(6);
+    expect(await fs.readdir(layout.checkRunDir(check.id))).not.toContainEqual(
+      expect.stringMatching(/^wt-/),
+    );
+
+    // Check kedua atas ref yang sama: ekstraksi dari cache, hasil sama.
+    const again = await finish(providerOf(repos));
+    expect(again.id).not.toBe(check.id);
+    expect(callJson).toHaveBeenCalledTimes(6);
+    expect(brief(findingRows(again.id))).toEqual(brief(rows));
+  }, 180_000);
+
+  it('head_ref berupa tag dan berupa SHA menghasilkan check yang sama dengan branch-nya', async () => {
+    changelog.mockResolvedValue([]);
+    const provider = providerOf(allFixtures());
+    const head = order().commits['feature-xyz'] as string;
+
+    for (const headRef of ['v-feature', head, 'feature/xyz']) {
+      const check = await finish(provider, headRef);
+      expect(check).toMatchObject({
+        status: 'clean',
+        head_ref: headRef,
+        base_sha: order().commits['initial'],
+        head_sha: head,
+      });
+    }
+    // Tanpa endpoint berubah tidak ada yang dicari di consumer.
+    expect(callJson).not.toHaveBeenCalled();
+    changelog.mockImplementation(() => Promise.resolve([...FIXTURE_CHANGELOG]));
+  }, 120_000);
+
+  it('ref tidak ada → failed dengan alasan, bukan clean; SHA belum terisi', async () => {
+    const check = await finish(providerOf(allFixtures()), 'feature/old');
+
+    expect(check).toMatchObject({
+      status: 'failed',
+      error: 'origin/feature/old tidak ada',
+      head_sha: null,
+      base_sha: null,
+    });
+    expect(check.finished_at).not.toBeNull();
+    expect(findingRows(check.id)).toEqual([]);
+    expect(changelog).not.toHaveBeenCalled();
+  }, 60_000);
+
+  it('riwayat tidak berhubungan → failed dengan pesan yang menyebut kedua ref', async () => {
+    const [provider] = register([
+      { name: 'unrelated', role: 'service', path: unrelated, specPath: 'openapi.json' },
+    ]);
+
+    const check = await finish(provider as Repo, 'lain');
+
+    expect(check.status).toBe('failed');
+    expect(check.error).toContain('main');
+    expect(check.error).toContain('lain');
+    expect(check.error).toContain('tidak berhubungan');
+  }, 60_000);
+
+  it('generate spec gagal → failed, bukan clean', async () => {
+    const entries = Object.values(fixtures.repos).map(entryOf);
+    const failing = entries.map((entry) =>
+      entry.name === 'svc-order' ? { ...entry, specCmd: 'node -e "process.exit(3)"' } : entry,
+    );
+    const check = await finish(providerOf(register(failing)));
+
+    expect(check.status).toBe('failed');
+    expect(check.error).toContain('spec_cmd gagal');
+    expect(findingRows(check.id)).toEqual([]);
+    expect(callJson).not.toHaveBeenCalled();
+  }, 120_000);
+
+  it('spec_path belum diisi → failed dengan petunjuk', async () => {
+    const entries = Object.values(fixtures.repos).map(entryOf);
+    const bare = entries.map((entry) =>
+      entry.name === 'svc-order' ? { ...entry, specPath: null, specCmd: null } : entry,
+    );
+    const check = await finish(providerOf(register(bare)));
+
+    expect(check.status).toBe('failed');
+    expect(check.error).toContain('belum punya spec_path');
+  }, 60_000);
+
+  it('fetch consumer gagal → check lanjut dan kegagalannya masuk ringkasan; fetch provider gagal → failed', async () => {
+    const clone = async (name: string, from: FixtureRepo) => {
+      const dir = path.join(tmp, name);
+      rawGit(tmp, 'clone', '--quiet', from.remote, dir);
+      // Ref origin/main sudah ada di klon; fetch berikutnya yang gagal.
+      rawGit(dir, 'remote', 'set-url', 'origin', path.join(tmp, 'tidak-ada.git'));
+      return dir;
+    };
+    const brokenConsumer = await clone('consumer-rusak', fixtures.repos['svc-payment']);
+    const [provider] = register([
+      entryOf(order()),
+      { name: 'consumer-rusak', role: 'microfrontend', path: brokenConsumer },
+    ]);
+
+    const check = await finish(provider as Repo);
+
+    expect(check.status).toBe('findings');
+    const summary = summaryOf(check.id);
+    expect(summary.fetch_errors).toHaveLength(1);
+    expect(summary.fetch_errors[0]).toMatchObject({ repo: 'consumer-rusak' });
+    expect(summary.fetch_errors[0]?.message).toContain('Fetch gagal');
+    expect(summary.consumer_shas).toHaveProperty('consumer-rusak');
+
+    const brokenProvider = await clone('provider-rusak', order());
+    const [bad] = register([{ ...entryOf(order()), name: 'provider-rusak', path: brokenProvider }]);
+    const failed = await finish(bad as Repo);
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('provider-rusak');
+    expect(failed.error).toContain('Fetch gagal');
+  }, 120_000);
+});
+
+describe('registry dan abort', () => {
+  it('project yang sudah punya check berjalan → CheckAlreadyRunningError; repo yang dibaca terhitung sibuk', async () => {
+    hold = true;
+    const repos = allFixtures();
+    const provider = providerOf(repos);
+
+    const first = await runner.start({ provider, baseRef: 'main', headRef: 'feature/xyz' });
+    await vi.waitFor(() => expect(callJson).toHaveBeenCalled(), { timeout: 60_000 });
+
+    const second = await runner
+      .start({ provider, baseRef: 'main', headRef: 'feature/xyz' })
+      .catch((e: unknown) => e);
+    expect(second).toBeInstanceOf(CheckAlreadyRunningError);
+    expect(second).toMatchObject({ projectId: provider.project_id, checkId: first.id });
+    expect(checksRepo().get(first.id + 1)).toBeUndefined();
+
+    for (const repo of repos) {
+      expect(runner.registry.usesRepo(repo.id)).toBe(repo.role !== 'e2e');
+    }
+
+    await runner.stop();
+    expect(checksRepo().get(first.id)?.status).toBe('cancelled');
+    expect(runner.registry.forProject(provider.project_id)).toBeUndefined();
+    expect(runner.registry.usesRepo(provider.id)).toBe(false);
+  }, 120_000);
+
+  it('abort → cancelled tanpa finding parsial, worktree bersih; project bisa menjalankan check lagi', async () => {
+    hold = true;
+    const provider = providerOf(allFixtures());
+    const check = await runner.start({ provider, baseRef: 'main', headRef: 'feature/xyz' });
+    await vi.waitFor(() => expect(callJson).toHaveBeenCalled(), { timeout: 60_000 });
+
+    runner.registry.forProject(provider.project_id)?.abort.abort();
+    await runner.registry.forProject(provider.project_id)?.done;
+
+    expect(checksRepo().get(check.id)).toMatchObject({ status: 'cancelled', error: null });
+    expect(findingRows(check.id)).toEqual([]);
+    expect(await fs.readdir(layout.checkRunDir(check.id))).not.toContainEqual(
+      expect.stringMatching(/^wt-/),
+    );
+
+    hold = false;
+    expect((await finish(provider)).status).toBe('findings');
+  }, 120_000);
+
+  it('oasdiff tidak bisa dipakai → ditolak sebelum baris check dibuat', async () => {
+    const provider = providerOf(allFixtures());
+    const unavailable = createCheckRunner({
+      ...deps,
+      oasdiff: {
+        assertAvailable: () =>
+          Promise.reject(new OasdiffUnavailableError('missing', 'oasdiff tidak ditemukan')),
+        changelog,
+      },
+    });
+    const before = db.prepare('SELECT COUNT(*) AS n FROM checks').get();
+
+    await expect(
+      unavailable.start({ provider, baseRef: 'main', headRef: 'feature/xyz' }),
+    ).rejects.toBeInstanceOf(OasdiffUnavailableError);
+
+    expect(db.prepare('SELECT COUNT(*) AS n FROM checks').get()).toEqual(before);
+  });
+});
