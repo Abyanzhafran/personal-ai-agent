@@ -12,11 +12,15 @@ const json = (body: unknown, status = 200) =>
 
 const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
 
-/** Menjawab `fetch` menurut "METODE /path"; rute yang tidak terdaftar dijawab 404. */
+/**
+ * Menjawab `fetch` menurut "METODE /path"; rute yang tidak terdaftar dijawab 404. Rute yang
+ * mengembalikan `Response` (galat) atau promise-nya (jawaban yang ditahan) dipakai apa adanya.
+ */
 function serve(routes: Record<string, () => unknown>) {
   fetchMock.mockImplementation((url, init) => {
     const method = init?.method ?? 'GET';
     const body = routes[`${method} ${url}`]?.();
+    if (body instanceof Response || body instanceof Promise) return Promise.resolve(body);
     return Promise.resolve(
       body === undefined
         ? json({ error: { code: 'tidak_ada', message: 'Tidak ada', details: null } }, 404)
@@ -80,14 +84,19 @@ function renderAt(path: string) {
 
 const scanning = () => ({ status: 'scanning', error: null, profile: null });
 
-const withRepos = (repos: ProjectRepo[] = REPOS) =>
+const NOT_READY = 'Tambahkan minimal satu repo service dan satu repo lain.';
+const detail = (p: Project) => ({ ...p, ready_for_check: false, not_ready_reason: NOT_READY });
+
+const withRepos = (repos: ProjectRepo[] = REPOS, extra: Record<string, () => unknown> = {}) =>
   serve({
     'GET /api/projects': () => PROJECTS,
     'GET /api/projects/1/repos': () => repos,
     'GET /api/projects/2/repos': () => [],
+    'GET /api/projects/2': () => detail(PROJECTS[1]!),
     // Hanya repo yang boleh dipindai; panggilan lain berarti salah pilih repo (dijawab 404).
     'POST /api/repos/12/discovery': scanning,
     'POST /api/repos/15/discovery': scanning,
+    ...extra,
   });
 
 /** Sel tiap baris data tabel repo, urut kolom (header dilewati). */
@@ -269,5 +278,155 @@ describe('tombol aksi', () => {
     expect(
       (screen.getByRole('button', { name: 'Jalankan discovery' }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+});
+
+describe('project tanpa repo', () => {
+  it('menampilkan Belum ada repo, dua syarat, dan alasan dari server, bukan tombol mati tanpa penjelasan', async () => {
+    withRepos();
+    renderAt('/projects/2');
+    const title = await screen.findByRole('heading', { level: 2, name: 'Belum ada repo' });
+    expect(screen.queryByRole('table')).toBeNull();
+
+    const card = within(title.parentElement!);
+    expect(card.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Minimal 1 repo serviceBelum',
+      'Minimal 1 consumer (microfrontend atau service lain)Belum',
+    ]);
+    expect(await card.findByText(NOT_READY)).toBeTruthy();
+    expect((card.getByRole('button', { name: 'Tambah repo' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+});
+
+describe('dialog Project baru', () => {
+  const NAME_TAKEN = 'Sudah ada project dengan nama serupa (folder "billing"). Pakai nama lain.';
+
+  async function openDialog() {
+    renderAt('/');
+    await userEvent.click(await screen.findByRole('button', { name: 'Project baru' }));
+    return screen.findByRole('dialog', { name: 'Project baru' });
+  }
+  const fieldsOf = (dialog: HTMLElement) => ({
+    name: within(dialog).getByLabelText('Nama project') as HTMLInputElement,
+    description: within(dialog).getByLabelText('Deskripsi') as HTMLTextAreaElement,
+    submit: within(dialog).getByRole('button', { name: 'Buat project' }) as HTMLButtonElement,
+  });
+  const posted = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+
+  it('Buat project nonaktif selama nama kosong; nama dibatasi 60 karakter', async () => {
+    withRepos();
+    const { name, submit } = fieldsOf(await openDialog());
+    expect(submit.disabled).toBe(true);
+    await userEvent.type(name, '   ');
+    expect(submit.disabled).toBe(true);
+    await userEvent.type(name, 'Customer Support');
+    expect(submit.disabled).toBe(false);
+    expect(name.maxLength).toBe(60);
+  });
+
+  it('menyimpan: nama dan deskripsi terkirim, dialog menutup, project baru terpilih', async () => {
+    const projects = [...PROJECTS];
+    const created = project(3, 'Customer Support');
+    withRepos(REPOS, {
+      'GET /api/projects': () => projects,
+      'POST /api/projects': () => {
+        projects.push(created);
+        return created;
+      },
+      'GET /api/projects/3/repos': () => [],
+      'GET /api/projects/3': () => detail(created),
+    });
+    const { name, description, submit } = fieldsOf(await openDialog());
+    await userEvent.type(name, 'Customer Support');
+    await userEvent.type(description, 'Portal');
+    await userEvent.click(submit);
+
+    await screen.findByRole('heading', { level: 1, name: 'Customer Support' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(posted().map(([url, init]) => [url, JSON.parse(init?.body as string)])).toEqual([
+      ['/api/projects', { name: 'Customer Support', description: 'Portal' }],
+    ]);
+    expect(
+      sidebar().getByRole('link', { name: 'Customer Support' }).getAttribute('aria-current'),
+    ).toBe('page');
+  });
+
+  it('409 slug bentrok: dialog tetap terbuka, pesan di bawah field nama, isian tidak hilang, tanpa toast', async () => {
+    const details = {
+      slug: 'billing',
+      fields: [{ in: 'body', path: 'name', message: NAME_TAKEN }],
+    };
+    withRepos(REPOS, {
+      'POST /api/projects': () =>
+        json({ error: { code: 'project_slug_taken', message: NAME_TAKEN, details } }, 409),
+    });
+    const dialog = await openDialog();
+    const { name, description, submit } = fieldsOf(dialog);
+    await userEvent.type(name, 'BILLING');
+    await userEvent.type(description, 'Tagihan');
+    await userEvent.click(submit);
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(NAME_TAKEN);
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect([name.value, description.value]).toEqual(['BILLING', 'Tagihan']);
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(submit.disabled).toBe(false);
+    // Hanya satu kemunculan: galat yang menunjuk isian tidak ikut menjadi toast.
+    expect(screen.getAllByText(NAME_TAKEN)).toHaveLength(1);
+  });
+
+  it('Buat project nonaktif selama request berjalan', async () => {
+    let finish!: (res: Response) => void;
+    withRepos(REPOS, {
+      'POST /api/projects': () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    const { name, submit } = fieldsOf(await openDialog());
+    await userEvent.type(name, 'Customer Support');
+    await userEvent.click(submit);
+    await waitFor(() => expect(submit.disabled).toBe(true));
+
+    finish(json(project(3, 'Customer Support'), 201));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('Esc menutup dialog dan fokus kembali ke tombol Project baru', async () => {
+    withRepos();
+    renderAt('/');
+    const trigger = await screen.findByRole('button', { name: 'Project baru' });
+    await userEvent.click(trigger);
+    await screen.findByRole('dialog');
+
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('klik di luar dialog menutupnya dan fokus kembali ke tombol Project baru', async () => {
+    withRepos();
+    renderAt('/');
+    const trigger = await screen.findByRole('button', { name: 'Project baru' });
+    await userEvent.click(trigger);
+    await screen.findByRole('dialog');
+
+    // Radix menonaktifkan pointer-events pada body saat dialog terbuka; klik di luar tetap dikirim.
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('Batal menutup dialog dan mengosongkan isian untuk pembukaan berikutnya', async () => {
+    withRepos();
+    const dialog = await openDialog();
+    await userEvent.type(fieldsOf(dialog).name, 'Setengah jadi');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Batal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Project baru' }));
+    expect(fieldsOf(await screen.findByRole('dialog', { name: 'Project baru' })).name.value).toBe(
+      '',
+    );
+    expect(posted()).toEqual([]);
   });
 });

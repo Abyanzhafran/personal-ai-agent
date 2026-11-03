@@ -1,4 +1,4 @@
-import { Project, ProjectRepo, RepoProfileResponse } from '@cc/shared';
+import { Project, ProjectDetail, ProjectRepo, RepoProfileResponse } from '@cc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from './api';
 import { useApiMutation } from './mutation';
@@ -19,6 +19,21 @@ export const useProjectRepos = (projectId: number | undefined) =>
     enabled: projectId !== undefined,
     refetchInterval: (query) =>
       query.state.data?.some((repo) => repo.profile_status === 'scanning') ? SCAN_POLL_MS : false,
+  });
+
+export const useProject = (projectId: number | undefined) =>
+  useQuery({
+    queryKey: ['projects', projectId],
+    queryFn: () => apiFetch(`/api/projects/${projectId}`, ProjectDetail),
+    enabled: projectId !== undefined,
+  });
+
+/** `description` kosong disimpan server sebagai tanpa deskripsi. */
+export const useCreateProject = () =>
+  useApiMutation({
+    mutationFn: (body: { name: string; description: string }) =>
+      apiFetch('/api/projects', Project, { method: 'POST', body }),
+    invalidates: [['projects']],
   });
 
 /** Memulai discovery untuk repo yang diberikan; server membalas 202 dan memindai di latar belakang. */

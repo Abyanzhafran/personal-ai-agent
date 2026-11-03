@@ -76,6 +76,13 @@ export async function apiFetch<T>(
   return parsed.data;
 }
 
+/** Pesan server untuk satu isian body (`path`); undefined bila galat ini tidak menunjuk isian itu. */
+export function fieldError(error: unknown, path: string): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const details = ValidationDetails.safeParse(error.details);
+  return details.success ? details.data.fields.find((f) => f.path === path)?.message : undefined;
+}
+
 /**
  * Galat menjadi toast. Galat yang menunjuk isian form (`details.fields`) dilewati: layar
  * menampilkannya di isian itu.

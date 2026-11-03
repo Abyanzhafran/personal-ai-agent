@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronRight,
   CircleCheck,
+  Folder,
   Info,
   Pencil,
   Plus,
@@ -12,7 +13,8 @@ import {
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { cn } from '../lib/cn';
-import { useProjectRepos, useProjects, useRunDiscovery } from '../lib/projects';
+import { useProject, useProjectRepos, useProjects, useRunDiscovery } from '../lib/projects';
+import { NewProjectDialog } from './new-project-dialog';
 import { PageHeader } from './page-header';
 import { Button, buttonVariants } from './ui/button';
 import { Chip } from './ui/chip';
@@ -112,6 +114,40 @@ function RepoTable({ repos }: { repos: readonly ProjectRepo[] }) {
   );
 }
 
+/** Project tanpa repo (CC-077): dua syarat siap-check dan alasan dari server, bukan tombol mati. */
+function EmptyRepos({ reason }: { reason: string | null | undefined }) {
+  const t = useT();
+  return (
+    <div className="flex flex-col items-center gap-4 rounded-md border border-outline-variant bg-surface-container-lowest px-6 py-12 text-center">
+      <span
+        aria-hidden
+        className="flex size-14 items-center justify-center rounded-xl bg-secondary-container text-on-secondary-container"
+      >
+        <Folder className="size-7" />
+      </span>
+      <h2 className="text-[22px] leading-7 font-normal">{t('projects.empty.title')}</h2>
+      <p className="max-w-[480px] text-body text-on-surface-variant">{t('projects.empty.body')}</p>
+      <ul className="flex w-full max-w-[420px] flex-col gap-2 text-left">
+        {(['projects.empty.needService', 'projects.empty.needConsumer'] as const).map((key) => (
+          <li
+            key={key}
+            className="flex items-center justify-between gap-3 rounded-md border border-outline-variant px-4 py-2.5"
+          >
+            {t(key)}
+            <Chip>{t('projects.empty.notYet')}</Chip>
+          </li>
+        ))}
+      </ul>
+      {/* Dialognya dipasang CC-078. */}
+      <Button disabled>
+        <Plus aria-hidden />
+        {t('projects.addRepo')}
+      </Button>
+      {reason && <p className="text-label text-on-surface-variant">{reason}</p>}
+    </div>
+  );
+}
+
 /**
  * Layar Projects (CC-076): daftar project di kiri, project terpilih di kanan. Tanpa `projectId`
  * (rute `/`), project pertama yang terpilih. Kartu "Check terakhir" menunggu endpoint check (CC-064).
@@ -122,6 +158,8 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
   const current =
     projects && (projectId === undefined ? projects[0] : projects.find((p) => p.id === projectId));
   const repos = useProjectRepos(current?.id).data;
+  // Alasan check belum bisa jalan hanya ditampilkan di state kosong, jadi hanya diminta di sana.
+  const detail = useProject(repos?.length === 0 ? current?.id : undefined).data;
   const discovery = useRunDiscovery(current?.id ?? 0);
 
   const pendingReview = repos?.filter((repo) => repo.profile_status === 'pending_review').length;
@@ -134,24 +172,27 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
 
   return (
     <div className="flex flex-wrap items-start gap-8">
-      <nav aria-label={t('projects.list')} className="flex w-66 flex-none flex-col gap-1">
-        {projects?.map((project) => (
-          <Link
-            key={project.id}
-            to="/projects/$projectId"
-            params={{ projectId: String(project.id) }}
-            aria-current={project.id === current?.id ? 'page' : undefined}
-            className={cn(
-              'flex min-h-14 items-center rounded-xl px-4 text-body font-medium',
-              project.id === current?.id
-                ? 'bg-secondary-container text-on-secondary-container'
-                : 'text-on-surface hover:bg-surface-container',
-            )}
-          >
-            {project.name}
-          </Link>
-        ))}
-      </nav>
+      <aside className="flex w-66 flex-none flex-col gap-3">
+        <NewProjectDialog />
+        <nav aria-label={t('projects.list')} className="flex flex-col gap-1">
+          {projects?.map((project) => (
+            <Link
+              key={project.id}
+              to="/projects/$projectId"
+              params={{ projectId: String(project.id) }}
+              aria-current={project.id === current?.id ? 'page' : undefined}
+              className={cn(
+                'flex min-h-14 items-center rounded-xl px-4 text-body font-medium',
+                project.id === current?.id
+                  ? 'bg-secondary-container text-on-secondary-container'
+                  : 'text-on-surface hover:bg-surface-container',
+              )}
+            >
+              {project.name}
+            </Link>
+          ))}
+        </nav>
+      </aside>
 
       <section className="min-w-0 flex-[999_1_560px]">
         <PageHeader
@@ -184,7 +225,11 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
         {projects && !current && <p>{t('projects.notFound')}</p>}
         {repos && (
           <>
-            <RepoTable repos={repos} />
+            {repos.length === 0 ? (
+              <EmptyRepos reason={detail?.not_ready_reason} />
+            ) : (
+              <RepoTable repos={repos} />
+            )}
             <p className="mt-4 flex items-center gap-2 text-label text-on-surface-variant">
               <Info aria-hidden className="size-4 shrink-0" />
               {t('projects.readOnlyNote')}
