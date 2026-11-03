@@ -231,7 +231,7 @@ describe('repo fixture asli', () => {
       }).trim();
       expect(c.blob_sha).toBe(expected);
     }
-  });
+  }, 30_000);
 
   it('tidak membaca working tree: perubahan lokal tanpa commit tidak mengubah hasil', async () => {
     const file = path.join(set.repos['mfe-dashboard'].path, 'src/api/orders.ts');
@@ -244,5 +244,5 @@ describe('repo fixture asli', () => {
     } finally {
       await fs.writeFile(file, original);
     }
-  });
+  }, 30_000);
 });

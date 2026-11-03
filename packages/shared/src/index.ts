@@ -6,3 +6,4 @@ export * from './domain.js';
 export * from './events.js';
 export * from './projects.js';
 export * from './repos.js';
+export * from './snippet.js';
