@@ -104,13 +104,9 @@ export function checkRoutes({
           res.flushHeaders();
         };
 
-        let heartbeat: NodeJS.Timeout | undefined;
         const subscription = checks.events.subscribe(check.id, (event) => {
           res.write(frame(event));
-          if (event.type === 'done') {
-            clearInterval(heartbeat);
-            res.end();
-          }
+          if (event.type === 'done') res.end();
         });
 
         if (!subscription) {
@@ -133,8 +129,11 @@ export function checkRoutes({
           res.end();
           return;
         }
-        heartbeat = setInterval(() => res.write(': keepalive\n\n'), heartbeatMs);
-        req.on('close', () => {
+        const heartbeat = setInterval(() => {
+          if (!res.writableEnded) res.write(': keepalive\n\n');
+        }, heartbeatMs);
+        // 'close' datang setelah `end()` maupun saat klien memutus koneksi.
+        res.on('close', () => {
           clearInterval(heartbeat);
           subscription.unsubscribe();
         });
