@@ -219,6 +219,68 @@ describe('startApp', () => {
     });
   });
 
+  it('pemulihan (CC-063): check yang tertinggal running → failed sebelum listen, project bisa menjalankan check baru', async () => {
+    app = await startApp(config(), { logger: silent() });
+    const { db, workspace } = app.context;
+    const projectId = Number(
+      db.prepare("INSERT INTO projects (name, slug) VALUES ('Order', 'order')").run()
+        .lastInsertRowid,
+    );
+    const repoId = Number(
+      db
+        .prepare(
+          `INSERT INTO repos (project_id, role, name, local_path, default_branch)
+           VALUES (?, 'service', 'svc-order', ?, 'main')`,
+        )
+        .run(projectId, tmp).lastInsertRowid,
+    );
+    const interrupted = Number(
+      db
+        .prepare(
+          `INSERT INTO checks (project_id, provider_repo_id, base_ref, head_ref, started_at)
+           VALUES (?, ?, 'main', 'feature/xyz', '2026-11-03T13:00:00.000Z')`,
+        )
+        .run(projectId, repoId).lastInsertRowid,
+    );
+    const orphan = path.join(workspace.layout.checkRunDir(interrupted), `wt-${'a'.repeat(40)}`);
+    await fs.mkdir(orphan, { recursive: true });
+    await app.close(); // proses "mati" di tengah check
+
+    const lines: { msg: string }[] = [];
+    const logger = createLogger({
+      level: 'info',
+      destination: { write: (line: string) => lines.push(JSON.parse(line) as { msg: string }) },
+    });
+    // `node` berpura-pura menjadi oasdiff supaya check baru bisa dimulai.
+    app = await startApp(config({ oasdiffBin: process.execPath }), { logger });
+
+    expect(
+      app.context.db.prepare('SELECT status, error FROM checks WHERE id = ?').get(interrupted),
+    ).toEqual({ status: 'failed', error: 'server berhenti saat check berjalan' });
+    await expect(fs.access(orphan)).rejects.toThrow();
+    const messages = lines.map((line) => line.msg);
+    expect(messages.indexOf('pemulihan check selesai')).toBeGreaterThanOrEqual(0);
+    expect(messages.indexOf('pemulihan check selesai')).toBeLessThan(
+      messages.indexOf('server mendengarkan'),
+    );
+
+    const provider = app.context.db
+      .prepare('SELECT * FROM repos WHERE id = ?')
+      .get(repoId) as Parameters<typeof app.context.checks.start>[0]['provider'];
+    const started = await app.context.checks.start({
+      provider,
+      baseRef: 'main',
+      headRef: 'feature/xyz',
+    });
+    await app.context.checks.registry.forProject(projectId)?.done;
+    expect(started.id).not.toBe(interrupted);
+    // Folder biasa bukan repo git, jadi check baru gagal di fetch; yang dibuktikan: ia sempat berjalan.
+    expect(
+      app.context.db.prepare('SELECT status, error FROM checks WHERE id = ?').get(started.id),
+    ).toMatchObject({ status: 'failed', error: expect.stringContaining('Fetch gagal') });
+    expect(app.context.checks.registry.forProject(projectId)).toBeUndefined();
+  });
+
   it('port yang sudah dipakai -> EADDRINUSE', async () => {
     app = await startApp(config(), { logger: silent() });
     const second = startApp(config({ port: app.port, workspaceDir: path.join(tmp, 'ws2') }), {

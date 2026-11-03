@@ -14,6 +14,7 @@ import { projectRoutes } from './projects/routes.js';
 import { createDiscoveryRunner, type DiscoveryRunner } from './repos/discovery.js';
 import { repoRoutes } from './repos/routes.js';
 import { createCheckRunner, type CheckRunner } from './runner/check.js';
+import { recoverInterruptedChecks } from './runner/recovery.js';
 import { WorkspaceLayout } from './workspace/layout.js';
 import { WorkspaceStore } from './workspace/store.js';
 
@@ -63,6 +64,8 @@ export async function startApp(config: Config, options: StartOptions): Promise<R
     shellRoot: layout.checksDir,
   });
   const git = createGitAdapter(runner);
+  // Sebelum `listen`: tidak ada request yang melihat check "berjalan" milik proses yang sudah mati.
+  await recoverInterruptedChecks({ db, workspace, git, logger });
   const llm = createLlmClient({ config, logger });
   const discovery = createDiscoveryRunner({ db, workspace, git, llm, logger, config });
   const oasdiff = createOasdiff({ runner, bin: config.oasdiffBin });
