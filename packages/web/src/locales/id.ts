@@ -206,8 +206,12 @@ export const id = {
   'run.status.skipped': 'Dilewati',
   'run.log': 'Log',
   'report.title': '{provider} · {base} → {head}',
-  'report.summary':
-    'Selesai {time} · {duration} · {files} file diperiksa di {repos} repo ({hop2} via hop 2) · {endpoints} endpoint terdampak · {none} tanpa consumer',
+  'report.sub.done': 'Selesai {time}',
+  'report.sub.files': '{files} file diperiksa di {repos} repo',
+  'report.sub.filesHop2': '{files} file diperiksa di {repos} repo ({hop2} via hop 2)',
+  'report.sub.affected': '{n} endpoint terdampak',
+  'report.sub.nonBreaking': '{n} perubahan non-breaking',
+  'report.sub.none': '{n} tanpa consumer',
   'report.copy': 'Salin ringkasan',
   'report.copied': 'Ringkasan disalin',
   'report.copyFailed': 'Ringkasan gagal disalin',
@@ -215,6 +219,30 @@ export const id = {
   'report.callout.title': 'Tanpa check ini',
   'report.callout.body':
     'Konflik frontend ke backend seperti ini baru muncul setelah deploy ke SIT, sebagai e2e yang gagal. Dengan check ini, file dan barisnya sudah diketahui sebelum merge.',
+  'report.callout.bodyBackend':
+    'Konflik backend ke backend seperti ini baru muncul saat integrasi antar-service berjalan di SIT, sebagai error di runtime. Dengan check ini, file dan barisnya sudah diketahui sebelum merge.',
+  'report.stale.title': 'Spec mungkin usang',
+  'report.stale.hint': 'Perbarui spec di {provider}, commit, lalu jalankan ulang check.',
+  'report.stale.diff.title': 'Hasil diff spec',
+  'report.stale.diff.body':
+    'Diff spec antara {base} dan {head} tidak menemukan perubahan yang berdampak ke consumer.',
+  'report.stale.diff.noSearch': 'Consumer tidak dicari karena tidak ada endpoint yang berubah.',
+  'report.clean.title': 'Bersih: aman untuk merge',
+  'report.clean.body':
+    'Tidak ada konflik dengan consumer. Hasil seperti ini sama pentingnya: tool tidak membuat peringatan palsu.',
+  'report.clean.checked': 'Consumer yang diperiksa',
+  'report.clean.noConflict': 'tidak ada konflik',
+  'report.clean.limit.title': 'Batas hasil bersih',
+  'report.clean.limit.body':
+    'Bersih berarti tidak ada konflik pada pemakaian yang terdeteksi. Pemanggil dinamis atau komunikasi async tidak terlihat oleh tool ini.',
+  'report.incomplete.title': 'Laporan tidak lengkap',
+  'report.incomplete.body':
+    'Batas file per check tercapai, {n} file tidak diperiksa. Temuan di file itu tidak muncul di laporan ini.',
+  'stopped.failed.title': 'Check gagal',
+  'stopped.failed.subtitle': 'Gagal {time} · {duration}',
+  'stopped.cancelled.title': 'Check dibatalkan',
+  'stopped.cancelled.subtitle': 'Dibatalkan {time} · {duration}',
+  'stopped.cancelled.body': 'Check dihentikan sebelum selesai, jadi tidak ada laporan.',
   'report.filter.label': 'Filter laporan',
   'report.filter.all': 'Semua',
   'report.filter.noConsumer': 'Tanpa consumer',

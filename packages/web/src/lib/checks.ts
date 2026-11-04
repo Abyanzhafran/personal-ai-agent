@@ -9,6 +9,7 @@ import {
   RepoRef,
 } from '@cc/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { ApiError, apiFetch } from './api';
 import { useApiMutation } from './mutation';
 
@@ -125,4 +126,33 @@ export function runningCheckId(error: unknown): number | undefined {
   }
   const id = (error.details as { check_id?: unknown } | null)?.check_id;
   return typeof id === 'number' ? id : undefined;
+}
+
+/**
+ * "Jalankan ulang": check baru dengan ref yang sama lalu dibuka. Bila project sudah punya check
+ * berjalan (409), yang itu yang dibuka, bukan galat buntu.
+ */
+export function useRerunCheck(check: Pick<Check, 'provider_repo_id' | 'head_ref' | 'base_ref'>) {
+  const navigate = useNavigate();
+  const start = useStartCheck();
+  const open = (checkId: number) =>
+    void navigate({ to: '/checks/$checkId', params: { checkId: String(checkId) } });
+  return {
+    pending: start.isPending,
+    rerun: () =>
+      start.mutate(
+        {
+          provider_repo_id: check.provider_repo_id,
+          head_ref: check.head_ref,
+          base_ref: check.base_ref,
+        },
+        {
+          onSuccess: (created) => open(created.id),
+          onError: (error) => {
+            const running = runningCheckId(error);
+            if (running !== undefined) open(running);
+          },
+        },
+      ),
+  };
 }

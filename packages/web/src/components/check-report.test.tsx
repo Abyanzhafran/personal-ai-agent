@@ -177,7 +177,24 @@ const FETCHED = new Date(2026, 10, 4, 13, 41).toISOString();
 const routes = (detail: CheckDetail = report()) => ({
   'GET /api/checks/128': () => detail,
   'GET /api/repos/11': () => repo({ id: 11, name: 'svc-order', last_fetch_at: FETCHED }),
+  'GET /api/projects/1/repos': () => [
+    repo({ id: 11, name: 'svc-order', role: 'service' }),
+    repo({ id: 12, name: mfe, role: 'microfrontend' }),
+    repo({ id: 13, name: payment, role: 'service' }),
+  ],
 });
+
+/** Check baru yang dibuat "Jalankan ulang", dan detailnya selama masih berjalan. */
+const created = { ...report().check, id: 129, status: 'running', finished_at: null };
+const running = (id: number) => ({
+  check: { ...created, id },
+  project_name: 'Order Platform',
+  provider_repo_name: 'svc-order',
+  findings: [],
+  summary: null,
+});
+const posted = () =>
+  fetchMock.mock.calls.filter(([url, init]) => url === '/api/checks' && init?.method === 'POST');
 
 async function openReport(detail?: CheckDetail) {
   serve(routes(detail));
@@ -365,11 +382,11 @@ describe('filter', () => {
 
     await userEvent.selectOptions(consumer, payment);
 
-    expect(chipLabels()).toEqual(['Semua 2', 'Break 1', 'Warn 1', 'Info 0', 'Tanpa consumer 0']);
+    expect(chipLabels()).toEqual(['Semua 2', 'Break 1', 'Warn 1']);
     expect(cardNames()).toEqual(['POST /orders']);
 
     await userEvent.selectOptions(consumer, mfe);
-    expect(chipLabels()).toEqual(['Semua 4', 'Break 2', 'Warn 1', 'Info 1', 'Tanpa consumer 0']);
+    expect(chipLabels()).toEqual(['Semua 4', 'Break 2', 'Warn 1', 'Info 1']);
 
     await userEvent.click(chip('Warn 1'));
     expect(cardNames()).toEqual(['GET /orders/{param}']);
@@ -379,12 +396,14 @@ describe('filter', () => {
   it('kombinasi tanpa hasil → pesan, bukan layar kosong', async () => {
     await openReport();
 
+    // "Info" masih aktif saat consumer berganti: chipnya tetap tampil walau jumlahnya 0.
+    await userEvent.click(chip('Info 1'));
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: 'Filter consumer' }),
       payment,
     );
-    await userEvent.click(chip('Info 0'));
 
+    expect(chipLabels()).toEqual(['Semua 2', 'Break 1', 'Warn 1', 'Info 0']);
     expect(cardNames()).toEqual([]);
     expect(screen.getByText('Tidak ada temuan yang cocok dengan filter ini.')).toBeTruthy();
   });
@@ -415,17 +434,6 @@ describe('aksi', () => {
     expect(await screen.findByText('Ringkasan gagal disalin')).toBeTruthy();
     expect(screen.queryByText('Ringkasan disalin')).toBeNull();
   });
-
-  const created = { ...report().check, id: 129, status: 'running', finished_at: null };
-  const running = (id: number) => ({
-    check: { ...created, id },
-    project_name: 'Order Platform',
-    provider_repo_name: 'svc-order',
-    findings: [],
-    summary: null,
-  });
-  const posted = () =>
-    fetchMock.mock.calls.filter(([url, init]) => url === '/api/checks' && init?.method === 'POST');
 
   it('Jalankan ulang memulai check dengan ref yang sama lalu membuka check baru', async () => {
     serve({
@@ -494,5 +502,239 @@ describe('dari check berjalan', () => {
       await screen.findByRole('heading', { level: 1, name: 'svc-order · main → feature/xyz' }),
     ).toBeTruthy();
     expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+});
+
+const STALE_DETAIL = 'Kode di handler_dirs berubah, tetapi docs/swagger.json tidak ikut diubah';
+const stale = finding({
+  endpoint: 'spec',
+  consumer_repo: null,
+  file: null,
+  line: null,
+  kind: 'spec_stale',
+  severity: 'warn',
+  detail: STALE_DETAIL,
+  confidence: null,
+});
+
+/** Ringkasan check yang tidak menemukan apa pun; menimpa lewat spread. */
+const EMPTY: CheckSummary = {
+  ...SUMMARY,
+  counts: { break: 0, warn: 0, info: 0 },
+  files_checked: 0,
+  files_via_hop2: 0,
+  endpoints_without_consumer: [],
+  consumer_shas: {},
+  matched_fields: {},
+};
+
+const withStatus = (status: CheckDetail['check']['status'], extra: Partial<CheckDetail>) => {
+  const base = report();
+  return report({ check: { ...base.check, status }, ...extra });
+};
+
+describe('varian: spec_stale (artboard 7)', () => {
+  it('spec_stale saja → catatan spec usang + hasil diff, tanpa chip, kartu, dan footer', async () => {
+    await openReport(
+      report({ findings: [stale], summary: { ...EMPTY, counts: { break: 0, warn: 1, info: 0 } } }),
+    );
+
+    expect(screen.getByText('Selesai 13:43 · 48 dtk')).toBeTruthy();
+    const note = screen.getByRole('complementary', { name: 'Spec mungkin usang' });
+    expect(note.textContent).toContain('spec_stale');
+    expect(note.textContent).toContain(STALE_DETAIL);
+    expect(note.textContent).toContain(
+      'Perbarui spec di svc-order, commit, lalu jalankan ulang check.',
+    );
+    const diff = within(screen.getByRole('region', { name: 'Hasil diff spec' }));
+    expect(
+      diff.getByText(/Diff spec antara main dan feature\/xyz tidak menemukan perubahan/),
+    ).toBeTruthy();
+    expect(
+      diff.getByText(/Consumer tidak dicari karena tidak ada endpoint yang berubah/),
+    ).toBeTruthy();
+    // Hanya Jalankan ulang, seperti mockup; tanpa filter, kartu endpoint, atau footer.
+    expect(screen.getByRole('button', { name: 'Jalankan ulang' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Salin ringkasan' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Filter laporan' })).toBeNull();
+    expect(cardNames()).toEqual([]);
+    expect(screen.queryByText('Base: merge-base')).toBeNull();
+  });
+
+  it('spec_stale bersama temuan lain → catatan di atas, bukan kartu "spec", dan tidak dihitung di chip', async () => {
+    await openReport(
+      report({
+        findings: [...findings128, stale],
+        summary: { ...SUMMARY, counts: { break: 3, warn: 3, info: 1 } },
+      }),
+    );
+
+    expect(screen.getByRole('complementary', { name: 'Spec mungkin usang' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'spec' })).toBeNull();
+    expect(chipLabels()).toEqual(['Semua 7', 'Break 3', 'Warn 2', 'Info 1', 'Tanpa consumer 1']);
+    expect(screen.getByRole('complementary', { name: 'Tanpa check ini' })).toBeTruthy();
+  });
+});
+
+describe('varian: bersih (artboard 8)', () => {
+  const infoOnly: Finding[] = [
+    finding({
+      endpoint: 'GET /stock',
+      consumer_repo: 'mfe-warehouse-ui',
+      file: 'src/api/stock.ts',
+      line: 12,
+      kind: 'type_changed',
+      severity: 'info',
+      detail: 'Query sku ditambahkan sebagai parameter opsional; tidak memengaruhi consumer.',
+      snippet: {
+        lines: lines(11, 'export const listStock = () =>', "  http.get('/stock')"),
+        highlight: 12,
+        tokens: [],
+      },
+    }),
+    finding({
+      endpoint: 'POST /stock/adjust',
+      consumer_repo: 'svc-shipping',
+      file: 'internal/stock/client.go',
+      line: 44,
+      kind: 'type_changed',
+      severity: 'info',
+      detail: 'Field response reason mendapat nilai baru recount.',
+    }),
+  ];
+  const cleanSummary: CheckSummary = {
+    ...EMPTY,
+    counts: { break: 0, warn: 0, info: 2 },
+    files_checked: 6,
+    consumer_shas: { 'svc-shipping': sha('b1c2d3e'), 'mfe-warehouse-ui': sha('f4a5b6c') },
+  };
+
+  it('hanya info → "aman untuk merge", tanpa "Tanpa check ini", dan tanpa chip severity yang kosong', async () => {
+    await openReport(report({ findings: infoOnly, summary: cleanSummary }));
+
+    expect(
+      screen.getByText(
+        'Selesai 13:43 · 48 dtk · 6 file diperiksa di 2 repo · 2 perubahan non-breaking',
+      ),
+    ).toBeTruthy();
+    const note = screen.getByRole('complementary', { name: 'Bersih: aman untuk merge' });
+    expect(note.textContent).toContain('Tidak ada konflik dengan consumer.');
+    expect(screen.queryByRole('complementary', { name: 'Tanpa check ini' })).toBeNull();
+    // AC1: hanya chip yang berisi.
+    expect(chipLabels()).toEqual(['Semua 2', 'Info 2']);
+    expect(cardNames()).toEqual(['GET /stock', 'POST /stock/adjust']);
+    expect(screen.getByRole('button', { name: 'Salin ringkasan' })).toBeTruthy();
+  });
+
+  it('daftar consumer yang diperiksa dan batas hasil bersih', async () => {
+    await openReport(report({ findings: infoOnly, summary: cleanSummary }));
+
+    const checked = within(screen.getByRole('region', { name: 'Consumer yang diperiksa' }));
+    expect(checked.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'svc-shippingtidak ada konflik',
+      'mfe-warehouse-uitidak ada konflik',
+    ]);
+    expect(screen.getByRole('complementary', { name: 'Batas hasil bersih' }).textContent).toContain(
+      'Pemanggil dinamis atau komunikasi async tidak terlihat oleh tool ini.',
+    );
+  });
+
+  it('status clean tanpa finding sama sekali → tetap laporan bersih, tanpa filter dan kartu', async () => {
+    await openReport(withStatus('clean', { findings: [], summary: cleanSummary }));
+
+    expect(screen.getByRole('complementary', { name: 'Bersih: aman untuk merge' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Filter laporan' })).toBeNull();
+    expect(cardNames()).toEqual([]);
+    expect(screen.getByRole('region', { name: 'Consumer yang diperiksa' })).toBeTruthy();
+  });
+});
+
+describe('varian: backend ke backend (artboard 9)', () => {
+  const serviceOnly = [findings128[2] as Finding];
+  const summary: CheckSummary = { ...SUMMARY, counts: { break: 1, warn: 0, info: 0 } };
+
+  it('semua consumer yang punya temuan berperan service → teks backend ke backend', async () => {
+    await openReport(report({ findings: serviceOnly, summary }));
+
+    const note = await screen.findByText(/Konflik backend ke backend seperti ini/);
+    expect(note.closest('aside')?.getAttribute('aria-label')).toBe('Tanpa check ini');
+  });
+
+  it('ada consumer microfrontend → tetap teks frontend ke backend', async () => {
+    await openReport();
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => url === '/api/projects/1/repos')).toBe(true),
+    );
+
+    expect(screen.getByText(/Konflik frontend ke backend seperti ini/)).toBeTruthy();
+    expect(screen.queryByText(/Konflik backend ke backend/)).toBeNull();
+  });
+});
+
+describe('laporan tidak lengkap', () => {
+  it('banner menyebut jumlah file yang dilewati', async () => {
+    await openReport(report({ summary: { ...SUMMARY, incomplete: true, skipped_files: 7 } }));
+
+    const banner = screen.getByRole('complementary', { name: 'Laporan tidak lengkap' });
+    expect(banner.textContent).toContain('7 file tidak diperiksa');
+  });
+
+  it('laporan lengkap tanpa banner', async () => {
+    await openReport();
+
+    expect(screen.queryByRole('complementary', { name: 'Laporan tidak lengkap' })).toBeNull();
+  });
+});
+
+describe('check gagal dan dibatalkan', () => {
+  it('gagal: alasan dari checks.error dan Jalankan ulang, tanpa daftar finding', async () => {
+    await openReport(
+      withStatus('failed', {
+        findings: [],
+        summary: null,
+        check: {
+          ...report().check,
+          status: 'failed',
+          error: 'fetch svc-order gagal: remote tidak terjangkau',
+        },
+      }),
+    );
+
+    expect(screen.getByText('Gagal 13:43 · 48 dtk')).toBeTruthy();
+    const note = screen.getByRole('complementary', { name: 'Check gagal' });
+    expect(note.textContent).toContain('fetch svc-order gagal: remote tidak terjangkau');
+    expect(screen.getByRole('button', { name: 'Jalankan ulang' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Salin ringkasan' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Filter laporan' })).toBeNull();
+    expect(cardNames()).toEqual([]);
+  });
+
+  it('Jalankan ulang dari check gagal memulai check dengan ref yang sama', async () => {
+    serve({
+      ...routes(withStatus('failed', { findings: [], summary: null })),
+      'POST /api/checks': () => created,
+      'GET /api/checks/129': () => running(129),
+    });
+    const { router } = renderAt('/checks/128');
+    await screen.findByRole('heading', { level: 1, name: 'svc-order · main → feature/xyz' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Jalankan ulang' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/checks/129'));
+    expect(JSON.parse(String(posted()[0]?.[1]?.body))).toEqual({
+      provider_repo_id: 11,
+      head_ref: 'feature/xyz',
+      base_ref: 'main',
+    });
+  });
+
+  it('dibatalkan: catatan netral dan Jalankan ulang', async () => {
+    await openReport(withStatus('cancelled', { findings: [], summary: null }));
+
+    expect(screen.getByText('Dibatalkan 13:43 · 48 dtk')).toBeTruthy();
+    const note = screen.getByRole('complementary', { name: 'Check dibatalkan' });
+    expect(note.textContent).toContain('Check dihentikan sebelum selesai, jadi tidak ada laporan.');
+    expect(screen.getByRole('button', { name: 'Jalankan ulang' })).toBeTruthy();
+    expect(cardNames()).toEqual([]);
   });
 });

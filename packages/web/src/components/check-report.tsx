@@ -5,9 +5,9 @@ import {
   type Finding,
   type Severity,
 } from '@cc/shared';
-import { useNavigate } from '@tanstack/react-router';
 import {
   CircleAlert,
+  CircleCheck,
   CircleMinus,
   Code,
   Copy,
@@ -18,11 +18,12 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { runningCheckId, useStartCheck } from '../lib/checks';
+import { useRerunCheck } from '../lib/checks';
 import { cn } from '../lib/cn';
 import { useT } from '../lib/i18n';
-import { useRepo } from '../lib/projects';
+import { useProjectRepos, useRepo } from '../lib/projects';
 import { formatClock, formatDuration, formatWhen } from '../lib/time';
+import { Callout } from './callout';
 import { FilterChip } from './check-history';
 import { PageHeader } from './page-header';
 import { Button } from './ui/button';
@@ -283,31 +284,88 @@ function Footer({ check, summary }: { check: CheckDetail['check']; summary: Chec
   );
 }
 
+/** Consumer yang ikut diperiksa pada laporan bersih; jumlah file per repo tidak tersimpan. */
+function CheckedConsumers({ names }: { names: readonly string[] }) {
+  const t = useT();
+  return (
+    <section
+      aria-label={t('report.clean.checked')}
+      className="mb-6 overflow-hidden rounded-md border border-outline-variant bg-surface-container-lowest"
+    >
+      <h2 className="px-6 py-4 text-title font-medium">{t('report.clean.checked')}</h2>
+      <ul>
+        {names.map((name) => (
+          <li key={name} className="flex items-center gap-3 border-t border-divider px-6 py-3">
+            <CircleCheck aria-hidden className="size-[18px] shrink-0 text-on-success-container" />
+            <span className="flex-1 font-medium">{name}</span>
+            <span className="text-on-surface-variant">{t('report.clean.noConflict')}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Hasil diff untuk laporan `spec_stale` saja: tidak ada dampak ke consumer. */
+function StaleDiff({ check, searched }: { check: CheckDetail['check']; searched: boolean }) {
+  const t = useT();
+  return (
+    <section
+      aria-label={t('report.stale.diff.title')}
+      className="mb-6 overflow-hidden rounded-md border border-outline-variant bg-surface-container-lowest"
+    >
+      <h2 className="px-6 py-4 text-title font-medium">{t('report.stale.diff.title')}</h2>
+      <div className="flex items-start gap-2 border-t border-divider px-6 py-3">
+        <CircleCheck aria-hidden className="size-5 shrink-0 text-on-success-container" />
+        <div>
+          {t('report.stale.diff.body', { base: check.base_ref, head: check.head_ref })}
+          {!searched && (
+            <div className="mt-1 text-on-surface-variant">{t('report.stale.diff.noSearch')}</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /**
- * Laporan check yang menemukan dampak (CC-082): ringkasan, filter severity + consumer, satu kartu per
- * endpoint, dan footer metadata. Jumlah di chip dihitung dari finding milik consumer yang dipilih;
- * endpoint tanpa consumer bukan milik consumer mana pun, jadi hilang saat satu consumer dipilih.
+ * Laporan check selesai (CC-082, CC-083): ringkasan, catatan per varian (spec usang, bersih, tanpa
+ * check ini, tidak lengkap), filter severity + consumer, satu kartu per endpoint, dan footer.
+ * `spec_stale` bukan milik endpoint mana pun, jadi tampil sebagai catatan, bukan kartu. Jumlah di
+ * chip dihitung dari finding milik consumer yang dipilih; endpoint tanpa consumer hilang saat satu
+ * consumer dipilih. Chip berjumlah 0 disembunyikan, kecuali "Semua" dan yang sedang aktif.
  */
 export function CheckReport({ detail, summary }: { detail: CheckDetail; summary: CheckSummary }) {
   const t = useT();
-  const navigate = useNavigate();
-  const start = useStartCheck();
+  const { check, findings, provider_repo_name: provider } = detail;
+  const { rerun, pending } = useRerunCheck(check);
+  const projectRepos = useProjectRepos(check.project_id).data;
   const [filter, setFilter] = useState<Filter>('all');
   const [consumer, setConsumer] = useState('');
-  const { check, findings, provider_repo_name: provider } = detail;
 
-  const consumers = [...new Set(findings.flatMap((finding) => finding.consumer_repo ?? []))].sort();
+  const stale = findings.find((finding) => finding.kind === 'spec_stale');
+  const impact = findings.filter((finding) => finding.kind !== 'spec_stale');
+  const staleOnly =
+    stale !== undefined && impact.length === 0 && summary.endpoints_without_consumer.length === 0;
+  // Bersih = tidak ada break/warn (spec_stale dihitung warn, jadi laporan stale tidak pernah bersih).
+  const clean = summary.counts.break === 0 && summary.counts.warn === 0;
+
+  const consumers = [...new Set(impact.flatMap((finding) => finding.consumer_repo ?? []))].sort();
   const scoped =
-    consumer === '' ? findings : findings.filter((finding) => finding.consumer_repo === consumer);
+    consumer === '' ? impact : impact.filter((finding) => finding.consumer_repo === consumer);
   const noConsumer = consumer === '' ? summary.endpoints_without_consumer : [];
   const shown = filter === 'all' ? scoped : scoped.filter((finding) => finding.severity === filter);
   const groups = filter === 'noConsumer' ? [] : groupByEndpoint(shown);
   const bare = filter === 'all' || filter === 'noConsumer' ? noConsumer : [];
+  const filterable = impact.length + summary.endpoints_without_consumer.length > 0;
 
-  const affected = new Set(
-    findings.filter((finding) => finding.kind !== 'spec_stale').map((finding) => finding.endpoint),
-  );
-  const repos = Object.keys(summary.consumer_shas).length;
+  const affected = new Set(impact.map((finding) => finding.endpoint));
+  const checked = Object.keys(summary.consumer_shas);
+  const repos = checked.length;
+  // Konflik backend ke backend: semua consumer yang punya temuan berperan service.
+  const backendOnly =
+    consumers.length > 0 &&
+    consumers.every((name) => projectRepos?.find((repo) => repo.name === name)?.role === 'service');
 
   const chips: { key: Filter; label: string; count: number }[] = [
     { key: 'all', label: t('report.filter.all'), count: scoped.length + noConsumer.length },
@@ -317,27 +375,31 @@ export function CheckReport({ detail, summary }: { detail: CheckDetail; summary:
       count: scoped.filter((finding) => finding.severity === severity).length,
     })),
     { key: 'noConsumer', label: t('report.filter.noConsumer'), count: noConsumer.length },
-  ];
+  ].filter(({ key, count }) => key === 'all' || count > 0 || key === filter);
 
-  function rerun() {
-    const open = (checkId: number) =>
-      void navigate({ to: '/checks/$checkId', params: { checkId: String(checkId) } });
-    start.mutate(
-      {
-        provider_repo_id: check.provider_repo_id,
-        head_ref: check.head_ref,
-        base_ref: check.base_ref,
-      },
-      {
-        onSuccess: (created) => open(created.id),
-        // Project ini sudah punya check berjalan: tampilkan yang itu, bukan galat buntu.
-        onError: (error) => {
-          const running = runningCheckId(error);
-          if (running !== undefined) open(running);
-        },
-      },
-    );
-  }
+  const subtitle = [
+    t('report.sub.done', {
+      time: check.finished_at === null ? '—' : formatClock(check.finished_at),
+    }),
+    formatDuration(check.started_at, check.finished_at) ?? t('checks.noDuration'),
+    ...(staleOnly
+      ? []
+      : [
+          summary.files_via_hop2 > 0
+            ? t('report.sub.filesHop2', {
+                files: summary.files_checked,
+                repos,
+                hop2: summary.files_via_hop2,
+              })
+            : t('report.sub.files', { files: summary.files_checked, repos }),
+          clean
+            ? t('report.sub.nonBreaking', { n: summary.counts.info })
+            : t('report.sub.affected', { n: affected.size }),
+          ...(summary.endpoints_without_consumer.length > 0
+            ? [t('report.sub.none', { n: summary.endpoints_without_consumer.length })]
+            : []),
+        ]),
+  ].join(' · ');
 
   async function copy() {
     const text = buildCopyText({
@@ -373,22 +435,16 @@ export function CheckReport({ detail, summary }: { detail: CheckDetail; summary:
     <>
       <PageHeader
         title={t('report.title', { provider, base: check.base_ref, head: check.head_ref })}
-        subtitle={t('report.summary', {
-          time: check.finished_at === null ? '—' : formatClock(check.finished_at),
-          duration: formatDuration(check.started_at, check.finished_at) ?? t('checks.noDuration'),
-          files: summary.files_checked,
-          repos,
-          hop2: summary.files_via_hop2,
-          endpoints: affected.size,
-          none: summary.endpoints_without_consumer.length,
-        })}
+        subtitle={subtitle}
         actions={
           <>
-            <Button variant="outlined" onClick={() => void copy()}>
-              <Copy aria-hidden />
-              {t('report.copy')}
-            </Button>
-            <Button disabled={start.isPending} onClick={rerun}>
+            {!staleOnly && (
+              <Button variant="outlined" onClick={() => void copy()}>
+                <Copy aria-hidden />
+                {t('report.copy')}
+              </Button>
+            )}
+            <Button disabled={pending} onClick={rerun}>
               <RefreshCw aria-hidden />
               {t('report.rerun')}
             </Button>
@@ -396,51 +452,67 @@ export function CheckReport({ detail, summary }: { detail: CheckDetail; summary:
         }
       />
 
-      {summary.counts.break > 0 && (
-        <aside
-          aria-label={t('report.callout.title')}
-          className="mb-6 flex items-start gap-3 rounded-md bg-surface-container px-6 py-4"
+      {stale && (
+        <Callout
+          tone="warning"
+          icon={TriangleAlert}
+          title={t('report.stale.title')}
+          tag="spec_stale"
         >
-          <Info aria-hidden className="size-6 shrink-0 text-primary" />
-          <div className="min-w-0">
-            <div className="font-medium">{t('report.callout.title')}</div>
-            <div className="text-on-surface-variant">{t('report.callout.body')}</div>
-          </div>
-        </aside>
+          <p>{stale.detail}</p>
+          <p>{t('report.stale.hint', { provider })}</p>
+        </Callout>
+      )}
+      {clean && (
+        <Callout tone="success" icon={CircleCheck} title={t('report.clean.title')}>
+          {t('report.clean.body')}
+        </Callout>
+      )}
+      {summary.counts.break > 0 && (
+        <Callout tone="info" icon={Info} title={t('report.callout.title')}>
+          {t(backendOnly ? 'report.callout.bodyBackend' : 'report.callout.body')}
+        </Callout>
+      )}
+      {summary.incomplete && (
+        <Callout tone="warning" icon={TriangleAlert} title={t('report.incomplete.title')}>
+          {t('report.incomplete.body', { n: summary.skipped_files })}
+        </Callout>
       )}
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        <div role="group" aria-label={t('report.filter.label')} className="flex flex-wrap gap-2">
-          {chips.map(({ key, label, count }) => {
-            const icon = key === 'all' ? undefined : FILTER_ICON[key];
-            return (
-              <FilterChip
-                key={key}
-                active={filter === key}
-                onClick={() => setFilter(key)}
-                icon={
-                  icon && <icon.Icon aria-hidden className={cn('size-[18px]', icon.className)} />
-                }
-              >
-                {label} {count}
-              </FilterChip>
-            );
-          })}
+      {filterable && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          <div role="group" aria-label={t('report.filter.label')} className="flex flex-wrap gap-2">
+            {chips.map(({ key, label, count }) => {
+              const icon = key === 'all' ? undefined : FILTER_ICON[key];
+              return (
+                <FilterChip
+                  key={key}
+                  active={filter === key}
+                  onClick={() => setFilter(key)}
+                  icon={
+                    icon && <icon.Icon aria-hidden className={cn('size-[18px]', icon.className)} />
+                  }
+                >
+                  {label} {count}
+                </FilterChip>
+              );
+            })}
+          </div>
+          <select
+            aria-label={t('report.consumer.label')}
+            value={consumer}
+            onChange={(event) => setConsumer(event.target.value)}
+            className="h-8 rounded-sm border border-outline bg-transparent px-3 text-body font-medium text-on-surface"
+          >
+            <option value="">{t('report.consumer.all')}</option>
+            {consumers.map((name) => (
+              <option key={name} value={name}>
+                {t('report.consumer.one', { name })}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          aria-label={t('report.consumer.label')}
-          value={consumer}
-          onChange={(event) => setConsumer(event.target.value)}
-          className="h-8 rounded-sm border border-outline bg-transparent px-3 text-body font-medium text-on-surface"
-        >
-          <option value="">{t('report.consumer.all')}</option>
-          {consumers.map((name) => (
-            <option key={name} value={name}>
-              {t('report.consumer.one', { name })}
-            </option>
-          ))}
-        </select>
-      </div>
+      )}
 
       {groups.map(([endpoint, group]) => (
         <FindingsCard
@@ -453,14 +525,26 @@ export function CheckReport({ detail, summary }: { detail: CheckDetail; summary:
       {bare.map((endpoint) => (
         <NoConsumerCard key={endpoint} endpoint={endpoint} repos={repos} />
       ))}
-      {groups.length === 0 && bare.length === 0 && (
+      {filterable && groups.length === 0 && bare.length === 0 && (
         <p className="mb-6 text-body text-on-surface-variant">{t('report.empty')}</p>
       )}
 
-      <Footer check={check} summary={summary} />
-      <p className="text-label text-on-surface-variant">
-        {t('report.artifacts', { path: `runs/checks/${check.id}/` })}
-      </p>
+      {staleOnly && <StaleDiff check={check} searched={repos > 0} />}
+      {clean && repos > 0 && <CheckedConsumers names={checked} />}
+      {clean && (
+        <Callout tone="info" icon={Info} title={t('report.clean.limit.title')}>
+          {t('report.clean.limit.body')}
+        </Callout>
+      )}
+
+      {!staleOnly && (
+        <>
+          <Footer check={check} summary={summary} />
+          <p className="text-label text-on-surface-variant">
+            {t('report.artifacts', { path: `runs/checks/${check.id}/` })}
+          </p>
+        </>
+      )}
     </>
   );
 }
