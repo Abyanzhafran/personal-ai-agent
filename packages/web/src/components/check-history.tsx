@@ -73,7 +73,7 @@ function FilterChip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3 text-body font-medium',
+        'inline-flex h-8 cursor-pointer items-center gap-2 rounded-sm px-3 text-body font-medium',
         active
           ? 'bg-secondary-container text-on-secondary-container'
           : 'border border-outline bg-transparent text-on-surface',

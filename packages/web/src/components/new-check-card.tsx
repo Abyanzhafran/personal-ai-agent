@@ -178,7 +178,7 @@ export function NewCheckCard() {
 
       {project && (
         <>
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md bg-surface-container px-4 py-3 text-label text-on-surface-variant">
+          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-sm bg-surface-container px-4 py-3 text-label text-on-surface-variant">
             {base.trim() !== '' && head.trim() !== '' && (
               <span>{t('checks.read.from', { base: shown(base), head: shown(head) })}</span>
             )}
