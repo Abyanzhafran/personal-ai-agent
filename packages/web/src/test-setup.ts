@@ -1,5 +1,4 @@
-// Matcher `toHaveNoViolations` (vitest-axe) untuk test aksesibilitas; impor `extend-expect` memberi tipenya.
-import 'vitest-axe/extend-expect';
+// Matcher `toHaveNoViolations` (vitest-axe) untuk test aksesibilitas; tipenya di vitest-axe.d.ts.
 import * as matchers from 'vitest-axe/matchers';
 import { expect } from 'vitest';
 

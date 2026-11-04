@@ -367,7 +367,7 @@ export function CheckReport({ detail, summary }: { detail: CheckDetail; summary:
     consumers.length > 0 &&
     consumers.every((name) => projectRepos?.find((repo) => repo.name === name)?.role === 'service');
 
-  const chips: { key: Filter; label: string; count: number }[] = [
+  const candidates: { key: Filter; label: string; count: number }[] = [
     { key: 'all', label: t('report.filter.all'), count: scoped.length + noConsumer.length },
     ...SEVERITIES.map((severity) => ({
       key: severity,
@@ -375,7 +375,8 @@ export function CheckReport({ detail, summary }: { detail: CheckDetail; summary:
       count: scoped.filter((finding) => finding.severity === severity).length,
     })),
     { key: 'noConsumer', label: t('report.filter.noConsumer'), count: noConsumer.length },
-  ].filter(({ key, count }) => key === 'all' || count > 0 || key === filter);
+  ];
+  const chips = candidates.filter(({ key, count }) => key === 'all' || count > 0 || key === filter);
 
   const subtitle = [
     t('report.sub.done', {
