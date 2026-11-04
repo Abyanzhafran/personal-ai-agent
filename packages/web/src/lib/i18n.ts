@@ -14,6 +14,9 @@ export const createT =
       String(vars[name] ?? placeholder),
     );
 
+/** Locale `Intl` untuk bahasa aktif (nama bulan); dipilih bersama kamus di atas. */
+export const locale = 'id-ID';
+
 /** Untuk kode di luar komponen (mis. `lib/api.ts`); komponen memakai `useT()`. */
 export const t = createT(id);
 

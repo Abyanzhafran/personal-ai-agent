@@ -1,4 +1,11 @@
-import { CheckIdParams, CreateCheckRequest, ERROR_CODES, type CheckEvent } from '@cc/shared';
+import {
+  CheckIdParams,
+  CreateCheckRequest,
+  ERROR_CODES,
+  ListChecksQuery,
+  type CheckEvent,
+  type CheckList,
+} from '@cc/shared';
 import type { Router } from 'express';
 import type { Db } from '../db/database.js';
 import { OasdiffUnavailableError } from '../diff/oasdiff.js';
@@ -60,6 +67,35 @@ export function checkRoutes({
           }
           throw error;
         }
+      }),
+    );
+
+    // Riwayat (CC-064): terbaru dulu, filter `project`, halaman `page` x `page_size`.
+    api.get(
+      '/checks',
+      validated({ query: ListChecksQuery }, ({ query }, _req, res) => {
+        const { items, total } = checkRows.list({
+          projectId: query.project,
+          limit: query.page_size,
+          offset: (query.page - 1) * query.page_size,
+        });
+        const body: CheckList = {
+          items,
+          page: query.page,
+          page_size: query.page_size,
+          total_items: total,
+          counts: checkRows.countByProject(),
+        };
+        res.json(body);
+      }),
+    );
+
+    api.get(
+      '/checks/:id',
+      validated({ params: CheckIdParams }, ({ params }, _req, res) => {
+        const detail = checkRows.detail(params.id);
+        if (!detail) throw new HttpError(404, ERROR_CODES.check_not_found, 'Check tidak ditemukan');
+        res.json(detail);
       }),
     );
 

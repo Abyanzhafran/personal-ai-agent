@@ -1,15 +1,39 @@
 import {
   CheckSummary,
+  Snippet,
   type Check,
+  type CheckDetail,
+  type CheckList,
+  type CheckListItem,
   type Confidence,
+  type Finding,
   type Kind,
   type Severity,
-  type Snippet,
 } from '@cc/shared';
 import type { Db } from '../db/database.js';
 
 const COLUMNS =
   'id, project_id, provider_repo_id, base_ref, head_ref, base_sha, head_sha, status, started_at, finished_at, error';
+
+/** Kolom `checks` berawalan `c.` plus nama project dan provider, untuk daftar dan detail. */
+const NAMED_COLUMNS = `${COLUMNS.split(', ')
+  .map((column) => `c.${column}`)
+  .join(', ')}, p.name AS project_name, r.name AS provider_repo_name`;
+const NAMED_FROM = `FROM checks c
+  JOIN projects p ON p.id = c.project_id
+  JOIN repos r ON r.id = c.provider_repo_id`;
+
+type NamedRow = Check & { project_name: string; provider_repo_name: string };
+type ListRow = NamedRow & { counts_json: string | null; spec_stale: 0 | 1 };
+type DetailRow = NamedRow & { summary_json: string | null };
+type FindingRow = Omit<Finding, 'snippet'> & { snippet_json: string | null };
+
+export interface ListChecksInput {
+  /** Kosong = semua project. */
+  projectId?: number | undefined;
+  limit: number;
+  offset: number;
+}
 
 export interface NewCheck {
   projectId: number;
@@ -89,12 +113,80 @@ export function createCheckRepository(db: Db) {
     `SELECT ${COLUMNS} FROM checks WHERE status = 'running' ORDER BY id`,
   );
 
+  const selectPage = db.prepare(
+    `SELECT ${NAMED_COLUMNS},
+       json_extract(c.summary_json, '$.counts') AS counts_json,
+       EXISTS (SELECT 1 FROM findings f WHERE f.check_id = c.id AND f.kind = 'spec_stale') AS spec_stale
+     ${NAMED_FROM}
+     WHERE (@projectId IS NULL OR c.project_id = @projectId)
+     ORDER BY c.started_at DESC, c.id DESC
+     LIMIT @limit OFFSET @offset`,
+  );
+  const countMatching = db.prepare(
+    'SELECT COUNT(*) AS total FROM checks WHERE (@projectId IS NULL OR project_id = @projectId)',
+  );
+  // LEFT JOIN: project tanpa check tetap muncul dengan hitungan 0.
+  const countPerProject = db.prepare(
+    `SELECT p.id AS project_id, p.name, COUNT(c.id) AS count
+     FROM projects p LEFT JOIN checks c ON c.project_id = p.id
+     GROUP BY p.id ORDER BY p.name COLLATE NOCASE, p.id`,
+  );
+  const selectDetail = db.prepare(
+    `SELECT ${NAMED_COLUMNS}, c.summary_json ${NAMED_FROM} WHERE c.id = ?`,
+  );
+  const selectFindings = db.prepare(
+    `SELECT f.id, f.endpoint, r.name AS consumer_repo, f.file, f.line, f.kind, f.severity, f.detail,
+       f.confidence, f.via_symbol, f.snippet_json
+     FROM findings f LEFT JOIN repos r ON r.id = f.consumer_repo_id
+     WHERE f.check_id = ? ORDER BY f.id`,
+  );
+
   function get(id: number): Check | undefined {
     return selectCheck.get(id) as Check | undefined;
   }
 
   return {
     get,
+
+    /** Satu halaman riwayat, terbaru dulu; `total` = semua baris yang cocok filter. */
+    list({ projectId, limit, offset }: ListChecksInput): { items: CheckListItem[]; total: number } {
+      const filter = { projectId: projectId ?? null };
+      const rows = selectPage.all({ ...filter, limit, offset }) as ListRow[];
+      const { total } = countMatching.get(filter) as { total: number };
+      const items = rows.map(({ counts_json, spec_stale, ...row }) => ({
+        ...row,
+        counts:
+          counts_json === null ? null : CheckSummary.shape.counts.parse(JSON.parse(counts_json)),
+        spec_stale: spec_stale === 1,
+      }));
+      return { items, total };
+    },
+
+    /** Jumlah check per project (semua project) untuk chip filter. */
+    countByProject(): CheckList['counts'] {
+      const byProject = countPerProject.all() as CheckList['counts']['by_project'];
+      return { total: byProject.reduce((sum, { count }) => sum + count, 0), by_project: byProject };
+    },
+
+    /** Check + finding (urut penyimpanan) + `summary_json`; `undefined` bila id tidak ada. */
+    detail(id: number): CheckDetail | undefined {
+      const row = selectDetail.get(id) as DetailRow | undefined;
+      if (!row) return undefined;
+      const { project_name, provider_repo_name, summary_json, ...check } = row;
+      const findings = (selectFindings.all(id) as FindingRow[]).map(
+        ({ snippet_json, ...finding }) => ({
+          ...finding,
+          snippet: snippet_json === null ? null : Snippet.parse(JSON.parse(snippet_json)),
+        }),
+      );
+      return {
+        check,
+        project_name,
+        provider_repo_name,
+        findings,
+        summary: summary_json === null ? null : CheckSummary.parse(JSON.parse(summary_json)),
+      };
+    },
 
     /** Check yang masih `running` di DB; saat start berarti prosesnya sudah mati (CC-063). */
     listRunning: (): Check[] => selectRunning.all() as Check[],

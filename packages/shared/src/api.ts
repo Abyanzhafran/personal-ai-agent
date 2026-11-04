@@ -48,6 +48,8 @@ export const ERROR_CODES = {
   check_not_found: 'check_not_found',
   /** Batalkan check yang sudah selesai atau tidak sedang berjalan (409). */
   check_not_running: 'check_not_running',
+  /** `GET /api/repos/:id/compare`: ref tidak ada atau riwayat base dan head tidak berhubungan (404). */
+  ref_not_found: 'ref_not_found',
 } as const;
 
 /** Satu isian yang salah. `in` menyebut bagian request, `path` nama field bertitik (`items.0.name`). */

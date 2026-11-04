@@ -89,6 +89,24 @@ export const RepoRef = z.object({
 });
 export type RepoRef = z.infer<typeof RepoRef>;
 
+/** Query `GET /api/repos/:id/compare` (CC-080): ref seperti yang diketik user, sama dengan `POST /api/checks`. */
+export const RepoCompareQuery = z.object({
+  base: z.string({ error: 'Ref base wajib diisi' }).trim().min(1, 'Ref base wajib diisi'),
+  head: z.string({ error: 'Ref head wajib diisi' }).trim().min(1, 'Ref head wajib diisi'),
+});
+export type RepoCompareQuery = z.infer<typeof RepoCompareQuery>;
+
+/**
+ * Hasil membaca dua ref tanpa menjalankan check. `base_sha` adalah ujung `base`, **bukan** merge-base:
+ * itu `merge_base`, yang disimpan check sebagai `checks.base_sha`.
+ */
+export const RepoCompare = z.object({
+  base_sha: z.string(),
+  head_sha: z.string(),
+  merge_base: z.string(),
+});
+export type RepoCompare = z.infer<typeof RepoCompare>;
+
 /** Hasil fetch satu repo. `POST /api/projects/:id/fetch` mengembalikan array ini, satu entri per repo. */
 export const RepoFetchResult = z.object({
   repo_id: z.number().int(),

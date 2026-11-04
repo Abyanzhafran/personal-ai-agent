@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { PlaceholderScreen } from '../components/PlaceholderScreen';
+import { CheckScreen } from '../components/check-screen';
 
 export const Route = createFileRoute('/checks/$checkId')({
   staticData: {
@@ -8,10 +8,10 @@ export const Route = createFileRoute('/checks/$checkId')({
       { label: 'breadcrumb.check', vars: { id: checkId } },
     ],
   },
-  component: CheckScreen,
+  component: CheckRoute,
 });
 
-function CheckScreen() {
+function CheckRoute() {
   const { checkId } = Route.useParams();
-  return <PlaceholderScreen route="/checks/$checkId" params={{ checkId }} />;
+  return <CheckScreen checkId={Number(checkId)} />;
 }

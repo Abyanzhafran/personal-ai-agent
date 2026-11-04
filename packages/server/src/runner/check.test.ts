@@ -543,12 +543,22 @@ describe('pipeline enam langkah (fixture asli, oasdiff dan Claude palsu)', () =>
       return dir;
     };
     const brokenConsumer = await clone('consumer-rusak', fixtures.repos['svc-payment']);
-    const [provider] = register([
+    const [provider, consumer] = register([
       entryOf(order()),
       { name: 'consumer-rusak', role: 'microfrontend', path: brokenConsumer },
-    ]);
+    ]) as [Repo, Repo];
+    const lastFetchAt = (repo: Repo) =>
+      (
+        db.prepare('SELECT last_fetch_at FROM repos WHERE id = ?').get(repo.id) as {
+          last_fetch_at: string | null;
+        }
+      ).last_fetch_at;
+    expect(lastFetchAt(provider)).toBeNull();
 
-    const check = await finish(provider as Repo);
+    const check = await finish(provider);
+    // Langkah 1 menulis last_fetch_at hanya untuk fetch yang berhasil (sumber "Fetch terakhir").
+    expect(lastFetchAt(provider)).not.toBeNull();
+    expect(lastFetchAt(consumer)).toBeNull();
 
     expect(check.status).toBe('findings');
     const summary = summaryOf(check.id);
