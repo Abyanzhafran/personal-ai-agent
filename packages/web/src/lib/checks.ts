@@ -1,6 +1,7 @@
 import {
   CHECK_PAGE_SIZES,
   Check,
+  CheckDetail,
   CheckList,
   ERROR_CODES,
   RepoCompare,
@@ -51,6 +52,23 @@ export const useChecks = ({
     placeholderData: keepPreviousData,
   });
 };
+
+/** Check + finding + ringkasan. Kuncinya `['checks', id]`, jadi mutasi yang menginvalidasi `['checks']` ikut memuat ulang. */
+export const useCheck = (checkId: number) =>
+  useQuery({
+    queryKey: ['checks', checkId],
+    queryFn: () => apiFetch(`/api/checks/${checkId}`, CheckDetail),
+    // Check yang tidak ada tidak akan muncul karena dicoba ulang; pesannya langsung tampil.
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && error.status === 404) && failureCount < 1,
+  });
+
+/** Menunggu statusnya tertulis (D-59), jadi sesudah sukses check sudah `cancelled`. */
+export const useCancelCheck = (checkId: number) =>
+  useApiMutation({
+    mutationFn: () => apiFetch(`/api/checks/${checkId}/cancel`, Check, { method: 'POST' }),
+    invalidates: [['checks']],
+  });
 
 /** Branch `origin` lalu tag, untuk saran isian ref. */
 export const useRepoRefs = (repoId: number | undefined) =>

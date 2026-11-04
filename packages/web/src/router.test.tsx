@@ -7,11 +7,35 @@ import { createQueryClient } from './lib/query-client';
 import { createAppRouter } from './router';
 import { fetchMock, serve } from './test-utils';
 
+/** Check yang sudah selesai: `/checks/:id` menampilkan placeholder laporan (CC-082). */
+const finished = (id: number) => ({
+  check: {
+    id,
+    project_id: 1,
+    provider_repo_id: 11,
+    base_ref: 'main',
+    head_ref: 'feature/xyz',
+    base_sha: null,
+    head_sha: null,
+    status: 'clean',
+    started_at: '2026-11-04T06:42:00.000Z',
+    finished_at: '2026-11-04T06:42:20.000Z',
+    error: null,
+  },
+  project_name: 'Order Platform',
+  provider_repo_name: 'svc-order',
+  findings: [],
+  summary: null,
+});
+
 // Layar Checks memanggil API; di sini cukup daftar kosong.
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   serve({
     'GET /api/projects': () => [],
+    'GET /api/checks/5': () => finished(5),
+    'GET /api/checks/42': () => finished(42),
+    'GET /api/checks/99': () => finished(99),
     'GET /api/checks?page=1&page_size=25': () => ({
       items: [],
       page: 1,

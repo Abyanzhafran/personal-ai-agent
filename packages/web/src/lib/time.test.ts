@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAgo, formatDuration, formatWhen } from './time';
+import { formatAgo, formatClock, formatDuration, formatWhen } from './time';
 
 // Tanggal dibuat dari komponen lokal: format menampilkan jam lokal, jadi test tidak bergantung zona waktu.
 const local = (month: number, day: number, hour: number, minute: number) =>
@@ -15,6 +15,14 @@ describe('formatWhen', () => {
 
   it('jam dan menit satu angka diberi nol di depan', () => {
     expect(formatWhen(local(11, 4, 9, 5).toISOString(), NOW)).toBe('Hari ini, 09:05');
+  });
+});
+
+describe('formatClock', () => {
+  it('jam lokal dengan nol di depan; detik hanya bila diminta', () => {
+    const iso = new Date(2026, 10, 4, 9, 5, 7).toISOString();
+    expect(formatClock(iso)).toBe('09:05');
+    expect(formatClock(iso, true)).toBe('09:05:07');
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Project, ProjectRepo } from '@cc/shared';
+import type { CheckEvent, Project, ProjectRepo } from '@cc/shared';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { render } from '@testing-library/react';
@@ -28,6 +28,33 @@ export function serve(routes: Record<string, () => unknown>) {
         : json(body, method === 'POST' ? 202 : 200),
     );
   });
+}
+
+/**
+ * jsdom tidak punya EventSource. Pasang dengan `vi.stubGlobal('EventSource', FakeEventSource)` dan
+ * kosongkan `instances` tiap test; `emit` mengirim event ke pendengar seperti server SSE.
+ */
+export class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  closed = false;
+  private listeners = new Map<string, ((event: Event) => void)[]>();
+
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  emit(event: CheckEvent) {
+    const message = new MessageEvent(event.type, { data: JSON.stringify(event) });
+    for (const listener of this.listeners.get(event.type) ?? []) listener(message);
+  }
 }
 
 export const project = (id: number, name: string): Project => ({

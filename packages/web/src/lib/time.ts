@@ -15,6 +15,13 @@ export function formatWhen(iso: string, now: Date = new Date()): string {
   return `${dayMonth.format(date)}, ${time}`;
 }
 
+/** "13:42" atau, dengan `seconds`, "13:42:01", dalam zona waktu lokal. */
+export function formatClock(iso: string, seconds = false): string {
+  const date = new Date(iso);
+  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return seconds ? `${clock}:${pad(date.getSeconds())}` : clock;
+}
+
 /** "3 menit lalu"; null berarti belum pernah. Selisih negatif (jam bergeser) dibaca "baru saja". */
 export function formatAgo(iso: string | null, now: Date = new Date()): string {
   if (iso === null) return t('time.never');
