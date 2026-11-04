@@ -2,7 +2,7 @@
 
 Alat lokal yang mendeteksi dampak perubahan kontrak API (OpenAPI) terhadap repo consumer sebelum merge. Satu proses Node di laptop, bind ke `127.0.0.1`, membaca repo lewat `git` (read-only), men-diff spec dengan `oasdiff`, dan memakai Claude hanya untuk membaca kode.
 
-> Dokumen ini diperbarui bersama tiap task yang mengubah perintah atau variabel env. Versi lengkap (prasyarat `oasdiff`, tool generator spec, langkah check pertama) difinalkan di CC-095.
+> Perintah dan variabel env di dokumen ini dicocokkan dengan `package.json` dan `.env.example` oleh test (`packages/server/src/docs.test.ts`). Bila ada yang gagal, lihat [RUNBOOK.md](./RUNBOOK.md).
 
 ## Status implementasi
 
@@ -18,6 +18,22 @@ Lihat [HANDOFF.md](./HANDOFF.md) untuk task yang sudah selesai, keputusan, dan l
 | `oasdiff`   | >= 1.11                        | Dicek saat start; hilang atau terlalu lama: server tetap hidup, check ditolak |
 | Akun Claude | API key + nama model           | Nama model wajib di `.env`; API key hanya dibutuhkan saat Claude dipanggil    |
 
+### Memasang `oasdiff`
+
+`oasdiff` membandingkan dua spec OpenAPI. Pasang salah satu, lalu cek dengan `oasdiff --version` (minimum `1.11.0`):
+
+```bash
+brew install oasdiff                                  # macOS / Linux dengan Homebrew
+go install github.com/oasdiff/oasdiff@latest          # butuh Go; hasil di $(go env GOPATH)/bin
+# atau unduh binary dari https://github.com/oasdiff/oasdiff/releases dan taruh di PATH
+```
+
+Langkah ini mengikuti dokumentasi `oasdiff` dan belum dicoba di mesin pengembang. Bila binary tidak ada di `PATH`, isi `OASDIFF_BIN` dengan path lengkapnya. Tanpa `oasdiff`, server tetap hidup tetapi check ditolak.
+
+### Tool generator spec (opsional)
+
+Hanya dibutuhkan bila spec repo provider **tidak** di-commit. Isi `spec_cmd` repo itu (saat menyetujui profil repo) dengan perintah yang menulis spec ke `spec_path`, misalnya `swag init -o docs` untuk Go atau skrip yang mengekspor OpenAPI dari FastAPI. Perintah dijalankan di worktree sementara; tool-nya (`swag`, Python, Node, ...) dipasang sendiri dan tidak dicek saat start. Repo provider dengan spec ter-commit tidak butuh ini.
+
 ## Menjalankan
 
 ```bash
@@ -32,6 +48,16 @@ Produksi lokal (satu proses, web disajikan server):
 npm run build
 npm start -w @cc/server  # http://127.0.0.1:4711
 ```
+
+## Check pertama
+
+Buka `http://127.0.0.1:5173` (mode `npm run dev`) atau `http://127.0.0.1:4711` (produksi lokal). Halaman **Panduan** menjelaskan alurnya secara singkat. Tanpa repo sendiri, `npm run fixtures` membuat empat repo git contoh (provider `svc-order`, consumer `mfe-dashboard` dan `svc-payment`, serta `e2e-suite`); daftarkan folder hasilnya.
+
+1. **Projects** → **Project baru** → isi nama.
+2. **Tambah repo** untuk tiap repo: path lokal folder git (absolut), nama, dan peran. Syaratnya minimal satu `service` (provider) dan, bersama `microfrontend`, total dua repo; `e2e` tidak dihitung. Tiap repo harus punya remote `origin` dengan default branch yang sudah di-fetch.
+3. Discovery berjalan otomatis untuk repo non-e2e (butuh `ANTHROPIC_API_KEY`). Buka **Tinjau profil**, periksa, lalu **Setujui & simpan**. Untuk repo provider, isi `spec_path` (dan `spec_cmd` bila spec dibangkitkan).
+4. **Checks** → pilih project, provider, serta base dan head ref (branch, tag, atau commit) → **Jalankan check**. Repo di-fetch otomatis di langkah pertama; **Fetch sekarang** hanya untuk memeriksa lebih dulu.
+5. Layar progres menampilkan enam langkah. Setelah selesai muncul laporan per endpoint; **Salin ringkasan** menyalin teks untuk deskripsi PR.
 
 ## Perintah
 
@@ -84,7 +110,7 @@ packages/shared   skema zod + tipe (satu-satunya definisi kontrak API)
 packages/server   Express 5, SQLite, git/oasdiff, runner
 packages/web      Vite 6 + React 19 + TanStack Router/Query + Tailwind 4
 fixtures/         generator repo git untuk test (make-fixtures.ts); isi repo di fixtures/repos/
-docs/             README, RUNBOOK (CC-095), HANDOFF, OPEN-QUESTIONS
+docs/             README, RUNBOOK, HANDOFF, OPEN-QUESTIONS
 ```
 
 ## Keamanan
