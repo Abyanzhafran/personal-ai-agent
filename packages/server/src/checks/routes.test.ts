@@ -1,4 +1,12 @@
-import { ApiErrorEnvelope, CheckEvent, ValidationDetails, type Check, type Repo } from '@cc/shared';
+import {
+  ApiErrorEnvelope,
+  CheckDetail,
+  CheckEvent,
+  CheckList,
+  ValidationDetails,
+  type Check,
+  type Repo,
+} from '@cc/shared';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
@@ -16,7 +24,7 @@ import {
   type StartCheckInput,
 } from '../runner/check.js';
 import { createCheckEvents } from '../runner/events.js';
-import { createCheckRepository } from './repository.js';
+import { createCheckRepository, type CheckResult, type NewFinding } from './repository.js';
 import { checkRoutes } from './routes.js';
 
 let db: Db;
@@ -362,5 +370,284 @@ describe('POST /api/checks/:id/cancel', () => {
     expect(cancel).not.toHaveBeenCalled();
 
     expect((await request(app).post('/api/checks/abc/cancel')).status).toBe(400);
+  });
+});
+
+describe('riwayat dan detail check (CC-064)', () => {
+  const SUMMARY: CheckResult['summary'] = {
+    files_checked: 2,
+    files_via_hop2: 0,
+    endpoints_without_consumer: [],
+    consumer_shas: {},
+    matched_fields: {},
+    incomplete: false,
+    skipped_files: 0,
+    tool_versions: {},
+    spec_unpinned: false,
+    fetch_errors: [],
+  };
+  let consumer: Repo;
+  let billing: { id: number; provider: Repo };
+  let emptyProjectId: number;
+
+  const addProject = (name: string) =>
+    createProjectRepository(db).create({ name, slug: name.toLowerCase(), description: null })
+      ?.id as number;
+  const addRepo = (projectId: number, role: 'service' | 'microfrontend', name: string) =>
+    (
+      createRepoRepository(db).create({
+        projectId,
+        role,
+        name,
+        localPath: `/r/${name}`,
+        defaultBranch: 'main',
+      }) as { repo: Repo }
+    ).repo;
+
+  const finding = (extra: Partial<NewFinding> = {}): NewFinding => ({
+    endpoint: 'GET /orders',
+    consumerRepoId: consumer.id,
+    file: 'src/orders.ts',
+    line: 12,
+    kind: 'removed',
+    severity: 'break',
+    detail: 'Parameter page_size dihapus',
+    confidence: 'high',
+    viaSymbol: null,
+    snippet: null,
+    ...extra,
+  });
+  // Literal penuh: `finding()` membaca `consumer`, yang baru ada setelah `beforeEach`.
+  const STALE: NewFinding = {
+    endpoint: 'spec',
+    consumerRepoId: null,
+    file: null,
+    line: null,
+    kind: 'spec_stale',
+    severity: 'warn',
+    detail: 'Spec di head tidak sama dengan hasil generate',
+    confidence: null,
+    viaSymbol: null,
+    snippet: null,
+  };
+
+  const order = () => ({ id: provider.project_id, provider });
+  const add = (startedAt: string, target: { id: number; provider: Repo } = order()) =>
+    createCheckRepository(db).create({
+      projectId: target.id,
+      providerRepoId: target.provider.id,
+      baseRef: 'main',
+      headRef: 'feature/xyz',
+      startedAt,
+    });
+  const finish = (id: number, findings: NewFinding[]) =>
+    createCheckRepository(db).saveResult(id, {
+      findings,
+      summary: SUMMARY,
+      finishedAt: '2026-11-03T20:00:00.000Z',
+    });
+
+  /** Lima check: Order (selesai dengan finding, hanya spec_stale, gagal, berjalan) dan Billing (bersih). */
+  const seedHistory = () => {
+    const a = add('2026-11-03T10:00:00.000Z');
+    finish(a.id, [finding(), finding({ severity: 'warn', kind: 'type_changed' })]);
+    const b = add('2026-11-03T11:00:00.000Z');
+    finish(b.id, [STALE]);
+    const c = add('2026-11-03T12:00:00.000Z');
+    createCheckRepository(db).fail(
+      c.id,
+      'origin/feature/old tidak ada',
+      '2026-11-03T12:00:02.000Z',
+    );
+    const d = add('2026-11-03T13:00:00.000Z');
+    const e = add('2026-11-03T14:00:00.000Z', billing);
+    finish(e.id, []);
+    return { a, b, c, d, e };
+  };
+
+  const list = async (query: Record<string, string | number> = {}) =>
+    CheckList.parse((await request(app).get('/api/checks').query(query)).body);
+
+  beforeEach(() => {
+    consumer = addRepo(provider.project_id, 'microfrontend', 'mfe');
+    const billingId = addProject('Billing');
+    billing = { id: billingId, provider: addRepo(billingId, 'service', 'svc-invoice') };
+    emptyProjectId = addProject('Empty');
+  });
+
+  describe('GET /api/checks', () => {
+    it('terbaru dulu; spec_stale dari findings, failed membawa error, running tanpa counts', async () => {
+      const { a, b, c, d, e } = seedHistory();
+
+      const { items } = await list();
+
+      expect(items.map((item) => item.id)).toEqual([e.id, d.id, c.id, b.id, a.id]);
+      const byId = (id: number) => items.find((item) => item.id === id);
+      expect(byId(a.id)).toMatchObject({
+        status: 'findings',
+        spec_stale: false,
+        counts: { break: 1, warn: 1, info: 0 },
+        project_name: 'Order',
+        provider_repo_name: 'svc-order',
+      });
+      // AC1: status tetap `findings`; badge datang dari baris finding. counts apa adanya (warn = 1).
+      expect(byId(b.id)).toMatchObject({
+        status: 'findings',
+        spec_stale: true,
+        counts: { break: 0, warn: 1, info: 0 },
+      });
+      // AC2
+      expect(byId(c.id)).toMatchObject({
+        status: 'failed',
+        error: 'origin/feature/old tidak ada',
+        counts: null,
+        spec_stale: false,
+      });
+      expect(byId(d.id)).toMatchObject({ status: 'running', counts: null, finished_at: null });
+      expect(byId(e.id)).toMatchObject({
+        status: 'clean',
+        counts: { break: 0, warn: 0, info: 0 },
+        project_name: 'Billing',
+        provider_repo_name: 'svc-invoice',
+      });
+    });
+
+    it('AC3: jumlah per project sama dengan baris hasil filter dan tidak berubah saat filter dipilih', async () => {
+      seedHistory();
+      const all = await list();
+
+      expect(all.counts).toEqual({
+        total: 5,
+        by_project: [
+          { project_id: billing.id, name: 'Billing', count: 1 },
+          { project_id: emptyProjectId, name: 'Empty', count: 0 },
+          { project_id: provider.project_id, name: 'Order', count: 4 },
+        ],
+      });
+      for (const { project_id, count } of all.counts.by_project) {
+        const filtered = await list({ project: project_id });
+        expect(filtered.total_items).toBe(count);
+        expect(filtered.items).toHaveLength(count);
+        expect(filtered.items.every((item) => item.project_id === project_id)).toBe(true);
+        expect(filtered.counts).toEqual(all.counts);
+      }
+    });
+
+    it('project yang tidak ada → daftar kosong, bukan error', async () => {
+      seedHistory();
+
+      const none = await list({ project: 999 });
+
+      expect(none).toMatchObject({ items: [], total_items: 0, counts: { total: 5 } });
+    });
+
+    it('halaman: page_size 10 membagi 12 check tanpa tumpang tindih; default 25; lewat akhir kosong', async () => {
+      const ids = Array.from(
+        { length: 12 },
+        (_, i) => add(`2026-11-03T10:${String(i).padStart(2, '0')}:00.000Z`).id,
+      );
+
+      const first = await list({ page_size: 10 });
+      const second = await list({ page_size: 10, page: 2 });
+
+      expect(first).toMatchObject({ page: 1, page_size: 10, total_items: 12 });
+      expect(second).toMatchObject({ page: 2, page_size: 10, total_items: 12 });
+      expect([...first.items, ...second.items].map((item) => item.id)).toEqual([...ids].reverse());
+      expect([first.items.length, second.items.length]).toEqual([10, 2]);
+
+      const fallback = await list();
+      expect(fallback).toMatchObject({ page: 1, page_size: 25, total_items: 12 });
+      expect(fallback.items).toHaveLength(12);
+      expect((await list({ page_size: 10, page: 3 })).items).toEqual([]);
+    });
+
+    it.each([
+      [{ page_size: 7 }, 'page_size', 'Ukuran halaman harus 10, 25, 50, 100'],
+      [{ page: 0 }, 'page', 'Nomor halaman tidak valid'],
+      [{ project: 'abc' }, 'project', 'Id project tidak valid'],
+    ])('query %j tidak valid → 400 dengan pesan per isian', async (query, path, message) => {
+      const res = await request(app).get('/api/checks').query(query);
+
+      expect(res.status).toBe(400);
+      expect(ValidationDetails.parse(errorOf(res.body).details).fields).toEqual([
+        { in: 'query', path, message },
+      ]);
+    });
+  });
+
+  describe('GET /api/checks/:id', () => {
+    it('check selesai: check, nama, finding dengan nama repo consumer dan snippet, serta summary', async () => {
+      const snippet = { lines: [{ n: 12, text: 'fetch(url)' }], highlight: 12, tokens: ['url'] };
+      const check = add('2026-11-03T10:00:00.000Z');
+      finish(check.id, [finding({ snippet, viaSymbol: 'useOrders', confidence: 'medium' }), STALE]);
+
+      const res = await request(app).get(`/api/checks/${check.id}`);
+
+      expect(res.status).toBe(200);
+      const detail = CheckDetail.parse(res.body);
+      expect(detail).toMatchObject({
+        check: { id: check.id, status: 'findings', finished_at: '2026-11-03T20:00:00.000Z' },
+        project_name: 'Order',
+        provider_repo_name: 'svc-order',
+      });
+      expect(detail.findings).toEqual([
+        {
+          id: expect.any(Number),
+          endpoint: 'GET /orders',
+          consumer_repo: 'mfe',
+          file: 'src/orders.ts',
+          line: 12,
+          kind: 'removed',
+          severity: 'break',
+          detail: 'Parameter page_size dihapus',
+          confidence: 'medium',
+          via_symbol: 'useOrders',
+          snippet,
+        },
+        {
+          id: expect.any(Number),
+          endpoint: 'spec',
+          consumer_repo: null,
+          file: null,
+          line: null,
+          kind: 'spec_stale',
+          severity: 'warn',
+          detail: STALE.detail,
+          confidence: null,
+          via_symbol: null,
+          snippet: null,
+        },
+      ]);
+      expect(detail.summary).toMatchObject({
+        counts: { break: 1, warn: 1, info: 0 },
+        files_checked: 2,
+      });
+    });
+
+    it('check berjalan atau gagal: tanpa finding dan summary; error ikut terbawa', async () => {
+      const running = add('2026-11-03T10:00:00.000Z');
+      const failed = add('2026-11-03T11:00:00.000Z');
+      createCheckRepository(db).fail(failed.id, 'origin/x tidak ada', '2026-11-03T11:00:02.000Z');
+
+      const a = CheckDetail.parse((await request(app).get(`/api/checks/${running.id}`)).body);
+      const b = CheckDetail.parse((await request(app).get(`/api/checks/${failed.id}`)).body);
+
+      expect(a).toMatchObject({ check: { status: 'running' }, findings: [], summary: null });
+      expect(b).toMatchObject({
+        check: { status: 'failed', error: 'origin/x tidak ada' },
+        findings: [],
+        summary: null,
+      });
+    });
+
+    it('check tidak ada → 404 check_not_found; id bukan angka → 400', async () => {
+      const missing = await request(app).get('/api/checks/999');
+      expect(missing.status).toBe(404);
+      expect(errorOf(missing.body).code).toBe('check_not_found');
+
+      const invalid = await request(app).get('/api/checks/abc');
+      expect(invalid.status).toBe(400);
+      expect(errorOf(invalid.body).code).toBe('validation_failed');
+    });
   });
 });

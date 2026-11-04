@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { CheckStatus } from './domain.js';
+import { CheckStatus, Confidence, Kind, Severity } from './domain.js';
+import { Snippet } from './snippet.js';
 
 const Count = z.number().int().nonnegative();
 
@@ -75,3 +76,87 @@ export const CheckIdParams = z.object({
   id: z.coerce.number({ error: INVALID_CHECK_ID }).int(INVALID_CHECK_ID).positive(INVALID_CHECK_ID),
 });
 export type CheckIdParams = z.infer<typeof CheckIdParams>;
+
+/** Ukuran halaman yang boleh dipilih untuk riwayat check (CC-064). */
+export const CHECK_PAGE_SIZES = [10, 25, 50, 100] as const;
+export const DEFAULT_CHECK_PAGE_SIZE = 25;
+
+const INVALID_PROJECT_ID = 'Id project tidak valid';
+const INVALID_PAGE = 'Nomor halaman tidak valid';
+const INVALID_PAGE_SIZE = `Ukuran halaman harus ${CHECK_PAGE_SIZES.join(', ')}`;
+
+/** Query `GET /api/checks`. Tanpa `project` = semua project; `page` mulai dari 1. */
+export const ListChecksQuery = z.object({
+  project: z.coerce
+    .number({ error: INVALID_PROJECT_ID })
+    .int(INVALID_PROJECT_ID)
+    .positive(INVALID_PROJECT_ID)
+    .optional(),
+  page: z.coerce
+    .number({ error: INVALID_PAGE })
+    .int(INVALID_PAGE)
+    .positive(INVALID_PAGE)
+    .default(1),
+  page_size: z.coerce
+    .number({ error: INVALID_PAGE_SIZE })
+    .refine((size) => (CHECK_PAGE_SIZES as readonly number[]).includes(size), INVALID_PAGE_SIZE)
+    .default(DEFAULT_CHECK_PAGE_SIZE),
+});
+export type ListChecksQuery = z.infer<typeof ListChecksQuery>;
+
+/**
+ * Satu baris riwayat. `counts` = `summary_json.counts`, null selama check berjalan atau bila tidak
+ * pernah menulis hasil (`failed`, `cancelled`). `spec_stale` diturunkan dari tabel `findings`
+ * (ada finding `spec_stale`), bukan dari `status`, yang tidak punya nilai itu.
+ */
+export const CheckListItem = Check.extend({
+  project_name: z.string(),
+  provider_repo_name: z.string(),
+  counts: CheckSummary.shape.counts.nullable(),
+  spec_stale: z.boolean(),
+});
+export type CheckListItem = z.infer<typeof CheckListItem>;
+
+/**
+ * `GET /api/checks`: halaman terbaru-dulu. `total_items` = baris hasil filter di semua halaman;
+ * `counts` selalu untuk semua project (angka chip filter tidak berubah saat filter dipilih).
+ */
+export const CheckList = z.object({
+  items: z.array(CheckListItem),
+  page: z.number().int().positive(),
+  page_size: z.number().int().positive(),
+  total_items: Count,
+  counts: z.object({
+    total: Count,
+    by_project: z.array(z.object({ project_id: z.number().int(), name: z.string(), count: Count })),
+  }),
+});
+export type CheckList = z.infer<typeof CheckList>;
+
+/** Satu baris `findings` untuk laporan. Finding tingkat provider (`spec_stale`) tanpa consumer/file/line. */
+export const Finding = z.object({
+  id: z.number().int(),
+  /** `'METHOD path'`, atau `'spec'` untuk finding tingkat provider. */
+  endpoint: z.string(),
+  /** Nama repo consumer; null untuk finding tingkat provider. */
+  consumer_repo: z.string().nullable(),
+  file: z.string().nullable(),
+  line: z.number().int().nullable(),
+  kind: Kind,
+  severity: Severity,
+  detail: z.string(),
+  confidence: Confidence.nullable(),
+  via_symbol: z.string().nullable(),
+  snippet: Snippet.nullable(),
+});
+export type Finding = z.infer<typeof Finding>;
+
+/** `GET /api/checks/:id`. `summary` null selama check berjalan atau bila tidak pernah menulis hasil. */
+export const CheckDetail = z.object({
+  check: Check,
+  project_name: z.string(),
+  provider_repo_name: z.string(),
+  findings: z.array(Finding),
+  summary: CheckSummary.nullable(),
+});
+export type CheckDetail = z.infer<typeof CheckDetail>;
