@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   ApiErrorEnvelope,
   Repo,
+  RepoCompare,
   RepoFetchResult,
   RepoRef,
   ValidationDetails,
@@ -567,6 +568,73 @@ describe('GET /api/repos/:id/refs', () => {
     expect(missing.status).toBe(404);
     expect(errorOf(missing.body).code).toBe('repo_not_found');
     expect((await request(app).get('/api/repos/abc/refs')).status).toBe(400);
+  });
+});
+
+describe('GET /api/repos/:id/compare', () => {
+  const register = async (localPath: string) => {
+    const project = await newProject();
+    return (await addRepo(project.id, { role: 'service', local_path: localPath })).body as Repo;
+  };
+  const compare = (id: number, query: Record<string, string>) =>
+    request(app).get(`/api/repos/${id}/compare`).query(query);
+
+  it('branch: ujung base, ujung head, dan merge-base-nya; SHA pendek juga diterima', async () => {
+    const repo = await register(order().path);
+    const expected = {
+      base_sha: order().commits['readme'],
+      head_sha: order().commits['feature-xyz'],
+      merge_base: order().commits['initial'],
+    };
+
+    const byBranch = await compare(repo.id, { base: 'main', head: 'feature/xyz' });
+    const bySha = await compare(repo.id, {
+      base: 'main',
+      head: (order().commits['feature-xyz'] as string).slice(0, 7),
+    });
+
+    expect(byBranch.status).toBe(200);
+    expect(RepoCompare.parse(byBranch.body)).toEqual(expected);
+    expect(RepoCompare.parse(bySha.body)).toEqual(expected);
+  });
+
+  it('tag dibaca sebagai head', async () => {
+    const { work, head } = makeIndependentRepo('compare-tag');
+    rawGit(work, 'tag', 'v1.0');
+    const repo = await register(work);
+
+    const res = await compare(repo.id, { base: 'main', head: 'v1.0' });
+
+    expect(RepoCompare.parse(res.body)).toEqual({
+      base_sha: head,
+      head_sha: head,
+      merge_base: head,
+    });
+  });
+
+  it('ref tidak ada → 404 ref_not_found dengan pesan yang menyebut ref itu', async () => {
+    const repo = await register(order().path);
+
+    const res = await compare(repo.id, { base: 'main', head: 'feature/hilang' });
+
+    expect(res.status).toBe(404);
+    expect(errorOf(res.body)).toMatchObject({ code: 'ref_not_found' });
+    expect(errorOf(res.body).message).toContain('origin/feature/hilang');
+  });
+
+  it('ref kosong → 400 per isian; repo tidak ada → 404; id bukan angka → 400', async () => {
+    const repo = await register(order().path);
+
+    const blank = await compare(repo.id, { base: 'main' });
+    expect(blank.status).toBe(400);
+    expect(ValidationDetails.parse(errorOf(blank.body).details).fields).toEqual([
+      { in: 'query', path: 'head', message: 'Ref head wajib diisi' },
+    ]);
+
+    const missing = await compare(9999, { base: 'main', head: 'x' });
+    expect(missing.status).toBe(404);
+    expect(errorOf(missing.body).code).toBe('repo_not_found');
+    expect((await request(app).get('/api/repos/abc/compare')).status).toBe(400);
   });
 });
 

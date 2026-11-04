@@ -4,10 +4,12 @@ import {
   CreateRepoRequest,
   ERROR_CODES,
   ProjectIdParams,
+  RepoCompareQuery,
   RepoIdParams,
   UpdateRepoRequest,
   type ProjectRepo,
   type Repo,
+  type RepoCompare,
   type RepoRef,
   type ValidationDetails,
 } from '@cc/shared';
@@ -21,6 +23,8 @@ import { HttpError } from '../http/errors.js';
 import { validated } from '../http/validate.js';
 import { createProjectRepository } from '../projects/repository.js';
 import type { CheckRunner } from '../runner/check.js';
+import { CheckFailure } from '../runner/errors.js';
+import { resolveRefs } from '../runner/resolve.js';
 import { assertSafeSegment, WorkspacePathError } from '../workspace/layout.js';
 import type { WorkspaceStore } from '../workspace/store.js';
 import type { DiscoveryRunner } from './discovery.js';
@@ -136,6 +140,17 @@ export function repoRoutes({
     return resolved;
   }
 
+  /** Folder yang dipindah atau dihapus user sesudah didaftarkan: jawab jelas, bukan 500. */
+  async function assertGitRepo(repo: Repo): Promise<void> {
+    if (!(await git.isInsideWorkTree(repo.local_path))) {
+      throw new HttpError(
+        409,
+        ERROR_CODES.repo_not_git,
+        `Folder repo tidak lagi berupa repo git: ${repo.local_path}`,
+      );
+    }
+  }
+
   /** Discovery dan persetujuan profil tidak berlaku untuk repo e2e dan tidak boleh menyela scan yang berjalan. */
   function assertDiscoverable(repo: Repo): void {
     if (repo.role === 'e2e') {
@@ -246,14 +261,7 @@ export function repoRoutes({
       validated({ params: RepoIdParams }, async ({ params }, _req, res) => {
         const repo = repos.get(params.id);
         if (!repo) throw repoNotFound();
-        // Folder yang dipindah atau dihapus user sesudah didaftarkan: jawab jelas, bukan 500.
-        if (!(await git.isInsideWorkTree(repo.local_path))) {
-          throw new HttpError(
-            409,
-            ERROR_CODES.repo_not_git,
-            `Folder repo tidak lagi berupa repo git: ${repo.local_path}`,
-          );
-        }
+        await assertGitRepo(repo);
         const [branches, tags] = await Promise.all([
           git.forEachRefRemotes(repo.local_path),
           git.forEachRefTags(repo.local_path),
@@ -269,6 +277,36 @@ export function repoRoutes({
         ];
         res.json(refs);
       }),
+    );
+
+    // Pratinjau yang dibaca check (CC-080): ref yang sama dengan POST /api/checks, tanpa menjalankannya.
+    api.get(
+      '/repos/:id/compare',
+      validated(
+        { params: RepoIdParams, query: RepoCompareQuery },
+        async ({ params, query }, _req, res) => {
+          const repo = repos.get(params.id);
+          if (!repo) throw repoNotFound();
+          await assertGitRepo(repo);
+          try {
+            const { baseTipSha, baseSha, headSha } = await resolveRefs(git, repo.local_path, {
+              baseRef: query.base,
+              headRef: query.head,
+            });
+            const body: RepoCompare = {
+              base_sha: baseTipSha,
+              head_sha: headSha,
+              merge_base: baseSha,
+            };
+            res.json(body);
+          } catch (error) {
+            if (error instanceof CheckFailure) {
+              throw new HttpError(404, ERROR_CODES.ref_not_found, error.message);
+            }
+            throw error;
+          }
+        },
+      ),
     );
 
     api.get(
