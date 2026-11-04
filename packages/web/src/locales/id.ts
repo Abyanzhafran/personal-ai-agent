@@ -279,6 +279,9 @@ export const id = {
   'time.daysAgo': '{n} hari lalu',
   'time.seconds': '{n} dtk',
   'time.minutesSeconds': '{m} mnt {s} dtk',
+  'table.actions': 'Aksi',
+  'state.loading': 'Memuat…',
+  'state.retry': 'Coba lagi',
   'api.network': 'Tidak dapat terhubung ke server. Periksa apakah aplikasi masih berjalan.',
   'api.unexpected': 'Server mengirim respons yang tidak terduga.',
 };

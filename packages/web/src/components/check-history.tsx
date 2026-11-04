@@ -153,7 +153,9 @@ export function CheckHistory({
               <TableHead>{t('checks.col.refs')}</TableHead>
               <TableHead className="w-[320px]">{t('checks.col.result')}</TableHead>
               <TableHead className="w-28">{t('checks.col.duration')}</TableHead>
-              <TableHead className="w-[76px]" />
+              <TableHead className="w-[76px]">
+                <span className="sr-only">{t('table.actions')}</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

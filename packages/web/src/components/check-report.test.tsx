@@ -2,6 +2,7 @@ import type { CheckDetail, CheckSummary, Finding } from '@cc/shared';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
+import { configureAxe } from 'vitest-axe';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEventSource, fetchMock, json, renderAt, repo, serve } from '../test-utils';
 
@@ -683,6 +684,28 @@ describe('laporan tidak lengkap', () => {
     await openReport();
 
     expect(screen.queryByRole('complementary', { name: 'Laporan tidak lengkap' })).toBeNull();
+  });
+});
+
+describe('aksesibilitas (axe)', () => {
+  // Warna tidak bisa dihitung di jsdom (CSS Tailwind tidak dimuat), jadi aturan kontras dimatikan.
+  const axe = configureAxe({ rules: { 'color-contrast': { enabled: false } } });
+
+  it.each([
+    ['laporan #128', () => report()],
+    [
+      'spec_stale saja',
+      () =>
+        report({
+          findings: [stale],
+          summary: { ...EMPTY, counts: { break: 0, warn: 1, info: 0 } },
+        }),
+    ],
+    ['check gagal', () => withStatus('failed', { findings: [], summary: null })],
+  ])('%s', async (_name, build) => {
+    const { container } = await openReport(build());
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
 

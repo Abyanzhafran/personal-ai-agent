@@ -6,6 +6,7 @@ import { CheckRunning } from './check-running';
 import { CheckStopped } from './check-stopped';
 import { PageHeader } from './page-header';
 import { PlaceholderScreen } from './PlaceholderScreen';
+import { QueryStatus } from './query-status';
 
 /**
  * `/checks/$checkId` memilih tampilan dari status check: berjalan → progres SSE (CC-081), selesai
@@ -16,13 +17,18 @@ import { PlaceholderScreen } from './PlaceholderScreen';
  */
 export function CheckScreen({ checkId }: { checkId: number }) {
   const t = useT();
-  const { data, error } = useCheck(checkId);
+  const query = useCheck(checkId);
+  const { data, error } = query;
 
   if (!data) {
     return (
       <>
         <PageHeader title={t('breadcrumb.check', { id: checkId })} />
-        {error instanceof ApiError && error.status === 404 && <p>{t('check.notFound')}</p>}
+        {error instanceof ApiError && error.status === 404 ? (
+          <p>{t('check.notFound')}</p>
+        ) : (
+          <QueryStatus queries={[query]} />
+        )}
       </>
     );
   }

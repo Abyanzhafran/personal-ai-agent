@@ -358,7 +358,7 @@ describe('riwayat', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['#', 'Waktu', 'Project', 'Provider', 'Base → Head', 'Hasil', 'Durasi', '']);
+    ).toEqual(['#', 'Waktu', 'Project', 'Provider', 'Base → Head', 'Hasil', 'Durasi', 'Aksi']);
     const rows = await historyRows();
     /** Teks sel (baris, kolom) dari data tabel. */
     const cell = (row: number, column: number) => rows[row]?.[column]?.textContent;

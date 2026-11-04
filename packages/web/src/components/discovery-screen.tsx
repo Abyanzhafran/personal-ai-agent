@@ -14,6 +14,7 @@ import {
   useRescan,
 } from '../lib/projects';
 import { PageHeader } from './page-header';
+import { QueryStatus } from './query-status';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -314,11 +315,20 @@ function Review({ profile, ...props }: ReviewProps & { profile: RepoProfileRespo
 /** Layar Tinjau profil repo (CC-079). */
 export function DiscoveryScreen({ repoId }: { repoId: number }) {
   const t = useT();
-  const repo = useRepo(repoId).data;
-  const profile = useRepoProfile(repoId).data;
+  const repoQuery = useRepo(repoId);
+  const profileQuery = useRepoProfile(repoId);
+  const repo = repoQuery.data;
+  const profile = profileQuery.data;
   const repos = useProjectRepos(repo?.project_id).data;
   const slug = useProjects().data?.find((project) => project.id === repo?.project_id)?.slug;
 
-  if (!repo || !profile) return <PageHeader title={t('discovery.title')} />;
+  if (!repo || !profile) {
+    return (
+      <>
+        <PageHeader title={t('discovery.title')} />
+        <QueryStatus queries={[repoQuery, profileQuery]} />
+      </>
+    );
+  }
   return <Review repo={repo} repos={repos} slug={slug} profile={profile} />;
 }

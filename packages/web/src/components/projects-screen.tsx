@@ -18,6 +18,7 @@ import { useProject, useProjectRepos, useProjects, useRunDiscovery } from '../li
 import { AddRepoDialog } from './add-repo-dialog';
 import { NewProjectDialog } from './new-project-dialog';
 import { PageHeader } from './page-header';
+import { QueryStatus } from './query-status';
 import { Button, buttonVariants } from './ui/button';
 import { Chip } from './ui/chip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -76,7 +77,9 @@ function RepoTable({ repos }: { repos: readonly ProjectRepo[] }) {
             <TableHead className="w-32">{t('repos.col.branch')}</TableHead>
             <TableHead>{t('repos.col.spec')}</TableHead>
             <TableHead className="w-44">{t('repos.col.profile')}</TableHead>
-            <TableHead className="w-[76px]" />
+            <TableHead className="w-[76px]">
+              <span className="sr-only">{t('table.actions')}</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -155,10 +158,12 @@ function EmptyRepos({ reason, onAdd }: { reason: string | null | undefined; onAd
  */
 export function ProjectsScreen({ projectId }: { projectId?: number }) {
   const t = useT();
-  const projects = useProjects().data;
+  const projectsQuery = useProjects();
+  const projects = projectsQuery.data;
   const current =
     projects && (projectId === undefined ? projects[0] : projects.find((p) => p.id === projectId));
-  const repos = useProjectRepos(current?.id).data;
+  const reposQuery = useProjectRepos(current?.id);
+  const repos = reposQuery.data;
   // Alasan check belum bisa jalan hanya ditampilkan di state kosong, jadi hanya diminta di sana.
   const detail = useProject(repos?.length === 0 ? current?.id : undefined).data;
   const discovery = useRunDiscovery(current?.id ?? 0);
@@ -223,6 +228,7 @@ export function ProjectsScreen({ projectId }: { projectId?: number }) {
             )
           }
         />
+        <QueryStatus queries={[projectsQuery, reposQuery]} />
         {projects && !current && <p>{t('projects.notFound')}</p>}
         {current && <AddRepoDialog project={current} open={adding} onOpenChange={setAdding} />}
         {repos && (

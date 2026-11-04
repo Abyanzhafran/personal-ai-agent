@@ -4,6 +4,7 @@ import { useT } from '../lib/i18n';
 import { CheckHistory } from './check-history';
 import { NewCheckCard } from './new-check-card';
 import { PageHeader } from './page-header';
+import { QueryStatus } from './query-status';
 
 /**
  * Layar Checks (CC-080): form Check baru di atas, riwayat di bawah. Filter project, halaman, dan
@@ -19,7 +20,8 @@ export function ChecksScreen({
   const t = useT();
   const page = search.page ?? 1;
   const pageSize = search.page_size ?? DEFAULT_CHECK_PAGE_SIZE;
-  const checks = useChecks({ project: search.project, page, page_size: pageSize }).data;
+  const checksQuery = useChecks({ project: search.project, page, page_size: pageSize });
+  const checks = checksQuery.data;
 
   const scope =
     search.project === undefined
@@ -31,6 +33,7 @@ export function ChecksScreen({
     <>
       <PageHeader title={t('nav.checks')} subtitle={subtitle} />
       <NewCheckCard />
+      <QueryStatus queries={[checksQuery]} />
       {checks && (
         <CheckHistory
           items={checks.items}
