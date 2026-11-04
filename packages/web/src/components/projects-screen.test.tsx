@@ -98,15 +98,21 @@ describe('sidebar dan header', () => {
 });
 
 describe('tabel repo', () => {
-  it('tujuh kolom dengan urutan mockup; kolom terakhir (chevron) tanpa judul', async () => {
+  it('tujuh kolom dengan urutan mockup; judul kolom terakhir (chevron) hanya untuk pembaca layar', async () => {
     withRepos();
     renderAt('/');
     const table = await screen.findByRole('table');
-    expect(
-      within(table)
-        .getAllByRole('columnheader')
-        .map((th) => th.textContent),
-    ).toEqual(['Repo', 'Peran', 'Path lokal', 'Branch', 'Spec', 'Profil discovery', '']);
+    const headers = within(table).getAllByRole('columnheader');
+    expect(headers.map((th) => th.textContent)).toEqual([
+      'Repo',
+      'Peran',
+      'Path lokal',
+      'Branch',
+      'Spec',
+      'Profil discovery',
+      'Aksi',
+    ]);
+    expect(headers.at(-1)?.querySelector('.sr-only')?.textContent).toBe('Aksi');
   });
 
   it('satu baris per repo: nama, peran, path, dan branch dari server', async () => {

@@ -58,13 +58,16 @@ function ResultChips({ item }: { item: CheckListItem }) {
   );
 }
 
-function FilterChip({
+/** Chip filter; `icon` tampil di depan hanya saat tidak aktif (aktif = tanda centang). */
+export function FilterChip({
   active,
   onClick,
+  icon,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -79,7 +82,7 @@ function FilterChip({
           : 'border border-outline bg-transparent text-on-surface',
       )}
     >
-      {active && <Check aria-hidden className="size-[18px]" />}
+      {active ? <Check aria-hidden className="size-[18px]" /> : icon}
       {children}
     </button>
   );
@@ -150,7 +153,9 @@ export function CheckHistory({
               <TableHead>{t('checks.col.refs')}</TableHead>
               <TableHead className="w-[320px]">{t('checks.col.result')}</TableHead>
               <TableHead className="w-28">{t('checks.col.duration')}</TableHead>
-              <TableHead className="w-[76px]" />
+              <TableHead className="w-[76px]">
+                <span className="sr-only">{t('table.actions')}</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
