@@ -58,13 +58,16 @@ function ResultChips({ item }: { item: CheckListItem }) {
   );
 }
 
-function FilterChip({
+/** Chip filter; `icon` tampil di depan hanya saat tidak aktif (aktif = tanda centang). */
+export function FilterChip({
   active,
   onClick,
+  icon,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -79,7 +82,7 @@ function FilterChip({
           : 'border border-outline bg-transparent text-on-surface',
       )}
     >
-      {active && <Check aria-hidden className="size-[18px]" />}
+      {active ? <Check aria-hidden className="size-[18px]" /> : icon}
       {children}
     </button>
   );
