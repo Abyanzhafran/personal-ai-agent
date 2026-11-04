@@ -5,11 +5,11 @@ Catatan untuk agent yang melanjutkan. Riwayat per task ada di `git log` dan kart
 ## 1. Status
 
 - **Sesi terakhir**: 2026-11-03.
-- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074, 075 (G2); CC-016–020, 076–079 (G3; AC yang sengaja kosong: CC-076 AC3 dan AC4, lihat D-48); CC-030–032, 034–038 (G4; AC yang sengaja kosong: D-35–D-38, D-51); CC-040–048 (G5; AC yang sengaja kosong: D-40, D-42, D-43, D-47); CC-084 (G7, lihat D-50); CC-049 (D-54); CC-050 (D-55); CC-033 (D-56; AC1 sengaja kosong); CC-060 (D-57); CC-061 (D-58); CC-062 (D-59); CC-063 (D-60); CC-064 (D-61). Sisa 12 task. CC-073 selesai kecuali satu AC: lebar 1360/960/640 **belum dicentang** karena belum dilihat dengan mata (jsdom hanya membuktikan nama kelas). Sama untuk CC-076 AC4 (path dan branch mono + ellipsis). Cek lewat `npm run dev`, lalu centang. Tampilan `/`, dialog, `/repos/:id/discovery`, dan `/panduan` belum dinilai dengan mata.
+- **Selesai**: CC-001–006, 070, 071 (G1); CC-090, 010–015, 072, 074, 075 (G2); CC-016–020, 076–079 (G3; AC yang sengaja kosong: CC-076 AC3 dan AC4, lihat D-48); CC-030–032, 034–038 (G4; AC yang sengaja kosong: D-35–D-38, D-51); CC-040–048 (G5; AC yang sengaja kosong: D-40, D-42, D-43, D-47); CC-084 (G7, lihat D-50); CC-049 (D-54); CC-050 (D-55); CC-033 (D-56; AC1 sengaja kosong); CC-060 (D-57); CC-061 (D-58); CC-062 (D-59); CC-063 (D-60); CC-064 (D-61); CC-065 (AC3, "Fetch terakhir" di layar, dicentang di CC-080). Sisa 11 task. CC-073 selesai kecuali satu AC: lebar 1360/960/640 **belum dicentang** karena belum dilihat dengan mata (jsdom hanya membuktikan nama kelas). Sama untuk CC-076 AC4 (path dan branch mono + ellipsis). Cek lewat `npm run dev`, lalu centang. Tampilan `/`, dialog, `/repos/:id/discovery`, dan `/panduan` belum dinilai dengan mata.
 - **`npm run verify`**: hijau terakhir setelah CC-063 (72 file, 1120 test), dengan `GIT_*` dilepas (bagian 7). Project server memakai `testTimeout` 30 dtk (`packages/server/vitest.config.ts`) karena test git kadang melewati 5 dtk.
 - **Node**: lokal v24. Node 20 belum diuji ulang sejak CC-090 (terakhir lolos 314 test di Docker, lihat bagian 7).
-- **Commit**: pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. CC-060–063 sudah di `main` (PR #7). Belum di-push: CC-064 di `feat/cc-064-check-history` (cabang dari `main`); cek `git status -sb`.
-- **Backlog** (Claude Docs, rev 118): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
+- **Commit**: pesan Inggris `CC-0xx: <judul task>`, tanpa trailer `Co-Authored-By`. CC-060–063 sudah di `main` (PR #7). Belum di-push: CC-064 di `feat/cc-064-check-history` (cabang dari `main`), CC-065 di `feat/cc-065-fetch-before-check` (cabang dari CC-064); cek `git status -sb`.
+- **Backlog** (Claude Docs, rev 119): AC task selesai sudah dicentang. Baca ulang kartu sebelum mulai.
   - Backlog: `https://claude.ai/artifact/9JhEHyYAfGbdEspd7yGmdi` (id `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299`)
   - Arsitektur: `https://claude.ai/artifact/Wi1pbDYivJM7MkPeF8ctno` (id `f0930578-8d3d-418a-81f1-589fc8622f74`)
   - Mockup v2: `https://claude.ai/artifact/WXBabwcVKiWBchD2sGfsHC` (artifact biasa, `list_files` / `read_file`)
@@ -136,7 +136,7 @@ G-1, G-3, G-4, G-7, G-10 sudah selesai.
 
 ## 6. Task berikutnya
 
-Berikutnya: **CC-065** (fetch sebelum check), lalu layar G6 CC-080/081. CC-082, CC-083, CC-085, dan CC-091–095 bergantung pada CC-060/061/064. Masih menunggu pemilik: versi `oasdiff` (`oasdiff --version`) untuk batas versi CC-034.
+Berikutnya: layar G6 **CC-080** lalu **CC-081**. CC-082, CC-083, CC-085, dan CC-091–095 bergantung pada CC-060/061/064. Masih menunggu pemilik: versi `oasdiff` (`oasdiff --version`) untuk batas versi CC-034.
 
 - **G2** dan **G3** sisa: AC visual CC-073 dan CC-076 AC4 (lihat bagian 1), CC-076 AC3 (G-9). Seterusnya ikuti tabel "Urutan eksekusi" di backlog.
 - Pertanyaan terbuka untuk pemilik: versi `oasdiff` dan `spec_cmd` kantor (tidak memblokir apa pun yang berikutnya); lockfile dan model/batas biaya (D-40) sudah dijawab.
@@ -165,7 +165,7 @@ Berikutnya: **CC-065** (fetch sebelum check), lalu layar G6 CC-080/081. CC-082, 
 
 Hanya `attrs.checked` pada `listItem` yang diubah; teks tidak boleh disentuh.
 
-1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":118}` untuk melihat apakah ada yang mengubah dokumen.
+1. `read` Doc `43418ba4-ee4d-48f2-bc4a-f1cfe8da3299` → tab body `4c17ae55-6c69`. Awali sesi dengan `{"kind":"view","sinceRev":119}` untuk melihat apakah ada yang mengubah dokumen.
 2. **Jangan `view` seluruh tab**: di rev 79 (307 blok) panggilan itu time-out 300 dtk. Cari kartu dengan `{"kind":"search","text":"CC-0xx"}`, lalu `{"kind":"search","text":"dep: CC-0yy"}` untuk paragraf estimasi; daftar AC adalah `list kind=check` tepat setelah paragraf deskripsi, baca dengan `{"kind":"view","parentId":"<id list>"}`. Id `listItem` berbentuk `mmz53254xvt.<angka>`. `view` dengan `from` membaca sampai akhir dokumen; untuk satu kartu pakai `{"kind":"search","blocks":{"first":"<id judul>","last":"<id paragraf dep kartu berikutnya>"}}` (id blok, bukan id karakter).
 3. `update` (`engine: "prose"`, `container: {"kind":"project","id":"43418ba4-..."}`) dengan `payload.ops` berisi `{"op":"set","target":{"kind":"blocks","ids":["mmz53254xvt.8804"]},"attrs":{"checked":true}}`; banyak op dalam satu panggilan boleh.
 4. Daftar "Tahap 1 disebut selesai bila ..." di akhir Doc dan bagian "Yang masih perlu jawaban Anda" **belum disentuh**.
