@@ -14,15 +14,17 @@
     "dev": "concurrently --kill-others-on-fail --names server,web --prefix-colors blue,green \"npm run dev -w @cc/server\" \"npm run dev -w @cc/web\"",
     "build": "npm run build -w @cc/shared && npm run build -w @cc/server && npm run build -w @cc/web",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p fixtures",
     "fixtures": "node --import tsx fixtures/cli.ts",
-    "verify": "npm run lint && npm run typecheck && npm run test"
+    "verify": "npm run lint && npm run typecheck && npm run test:coverage"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^20.19.43",
+    "@vitest/coverage-v8": "^4.1.12",
     "concurrently": "^9.2.5",
     "eslint": "^10.14.0",
     "globals": "^17.13.0",

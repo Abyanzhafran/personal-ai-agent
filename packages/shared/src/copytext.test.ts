@@ -170,4 +170,54 @@ describe('buildCopyText', () => {
       'spec\n- WARN spec_stale\n  Spec di head tidak sama dengan hasil generate.',
     );
   });
+
+  it('finding sama berat dalam satu endpoint diurutkan menurut repo, file, lalu baris', () => {
+    const at = (repo: string, file: string, line: number) =>
+      finding({ location: { repo, file, line }, confidence: null });
+    const text = buildCopyText(
+      report({
+        findings: [
+          at('b-repo', 'x.ts', 5),
+          at('a-repo', 'z.ts', 1),
+          at('a-repo', 'y.ts', 9),
+          at('a-repo', 'y.ts', 2),
+        ],
+      }),
+    );
+
+    expect(text.split('\n').filter((line) => line.startsWith('- BREAK'))).toEqual([
+      '- BREAK removed — a-repo y.ts:2',
+      '- BREAK removed — a-repo y.ts:9',
+      '- BREAK removed — a-repo z.ts:1',
+      '- BREAK removed — b-repo x.ts:5',
+    ]);
+  });
+
+  it('finding tanpa lokasi sama berat: urutan masukan dipertahankan', () => {
+    const stale = (detail: string) =>
+      finding({
+        endpoint: 'spec',
+        location: null,
+        kind: 'spec_stale',
+        severity: 'warn',
+        detail,
+        confidence: null,
+      });
+    const text = buildCopyText(report({ findings: [stale('pertama'), stale('kedua')] }));
+
+    expect(text).toContain('spec\n- WARN spec_stale\n  pertama\n- WARN spec_stale\n  kedua');
+  });
+
+  it('tanpa endpoint tanpa consumer dan tanpa repo: baris dan blok itu tidak ada', () => {
+    const text = buildCopyText(
+      report({
+        summary: { ...summary, endpoints_without_consumer: [], consumer_shas: {} },
+        findings: findings128,
+      }),
+    );
+
+    expect(text).toContain('3 break · 2 warn · 1 info\n12 file diperiksa di 0 repo (1 via hop 2)');
+    expect(text).not.toContain('Tanpa consumer');
+    expect(text).not.toContain('Consumer (default branch)');
+  });
 });
