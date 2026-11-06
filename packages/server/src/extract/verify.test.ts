@@ -81,6 +81,15 @@ describe('verifyExtraction', () => {
     expect(confidences(result)).toEqual(['high']);
   });
 
+  it('path dengan beberapa segmen statis: yang terpanjang dipakai, seri memilih yang pertama', () => {
+    const line = lineOf('getOrder');
+    const result = verifyExtraction(
+      extraction([call({ path: '/orders/ok', line }), call({ path: '/orders/cancel', line })]),
+      content,
+    );
+    expect(confidences(result)).toEqual(['high', 'high']);
+  });
+
   it('lolos lewat nama field walau path tidak ada di baris itu', () => {
     const result = verifyExtraction(
       extraction([
@@ -89,6 +98,22 @@ describe('verifyExtraction', () => {
       content,
     );
     expect(confidences(result)).toEqual(['high']);
+  });
+
+  it('lolos lewat nama field body atau response walau path tidak ada di baris itu', () => {
+    const line = lineOf('page_size');
+    const result = verifyExtraction(
+      extraction([
+        call({
+          path: '/payments',
+          body_fields: [{ name: 'status', literal: null, type: null }],
+          line,
+        }),
+        call({ path: '/payments', response_fields_read: [{ name: 'status', line }], line }),
+      ]),
+      content,
+    );
+    expect(confidences(result)).toEqual(['high', 'high']);
   });
 
   it('baris di luar jangkauan file: keyakinan low, panggilan tidak dibuang', () => {

@@ -66,9 +66,10 @@ Buka `http://127.0.0.1:5173` (mode `npm run dev`) atau `http://127.0.0.1:4711` (
 | `npm run dev`                 | Server (`node --watch`, restart otomatis) dan Vite bersamaan             |
 | `npm run build`               | Build `shared`, `server`, lalu `web` (hasil web di `packages/web/dist`)  |
 | `npm test`                    | Vitest, semua paket                                                      |
+| `npm run test:coverage`       | `npm test` + ambang cakupan 90% per berkas untuk 5 modul murni           |
 | `npm run lint`                | ESLint + `prettier --check`                                              |
 | `npm run typecheck`           | `tsc --noEmit` per paket (web menjalankan `tsr generate` dulu)           |
-| `npm run verify`              | lint + typecheck + test. **Wajib hijau sebelum task ditandai selesai**   |
+| `npm run verify`              | lint + typecheck + test:coverage. **Wajib hijau sebelum task selesai**   |
 | `npm run format`              | `prettier --write .`                                                     |
 | `npm run generate -w @cc/web` | Membangkitkan `src/routeTree.gen.ts` (otomatis saat dev/build/typecheck) |
 | `npm run fixtures [-- <dir>]` | Membuat empat repo git fixture (default `<tmp>/contract-check-fixtures`) |
